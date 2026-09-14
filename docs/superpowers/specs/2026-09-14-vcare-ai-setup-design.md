@@ -33,10 +33,11 @@ Each is its own `git init` repo. Spokes find the hub at `../vcare-hub`; the hub 
 ```
 CLAUDE.md
 skills-lock.json
-.gitignore                      # Node; ignores .claude/settings.local.json
+.gitignore                      # Node
+.gitattributes                  # * text=auto eol=lf (keeps .sh runnable under Git Bash)
 .claude/
   settings.json                 # committed team permissions (allow + deny)
-  settings.local.json           # created, gitignored (personal overrides)
+  settings.local.json           # committed, as in the reference and the prompt's deliverable list
   agents/flow-{spec-author,developer,test-author,qa-runner,code-reviewer,docs-updater}.md
   commands/{brainstorm,construct-spec,develop,write-tests,manual-qa,review-code,update-docs,develop-feature-e2e,system-design}.md
   skills/<name>/SKILL.md        # installed (skills.sh) + hand-authored, all here
