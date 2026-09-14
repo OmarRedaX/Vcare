@@ -16,8 +16,8 @@ Every service on the vcare platform. One row per service; details live in each s
 
 | Service | Repo | Owner | Tier | Status | Card |
 |---|---|---|---|---|---|
-| identity-service | `vcare-identity-api` | identity-team | 1 (sync, critical path — nobody logs in without it) | design — no code yet | [card](./identity-service.card.md) |
-| care-service | `vcare-care-api` | care-team | 1 (sync, critical path — search, booking, consultations) | design — no code yet | [card](./care-service.card.md) |
+| identity-service | [`vcare-identity-api`](https://github.com/OmarRedaX/vcare-identity-api) | identity-team | 1 (sync, critical path — nobody logs in without it) | design — no code yet | [card](./identity-service.card.md) |
+| care-service | [`vcare-care-api`](https://github.com/OmarRedaX/vcare-care-api) | care-team | 1 (sync, critical path — search, booking, consultations) | design — no code yet | [card](./care-service.card.md) |
 | ai-retrieval-service | not created | not assigned | Phase 2 | planned — not built (PRD §12) | no card |
 
 ## Tiers
