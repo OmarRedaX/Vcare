@@ -53,7 +53,7 @@ No `src/`, no per-module `docs/<module>/` folders — the workflow creates those
 | # | Decision | Chosen | Consequence |
 |---|---|---|---|
 | D1 | Repo location | `E:\Full Stack Projects\Vcare\VCare\` | relative hub path `../vcare-hub` |
-| D2 | User token transport | `Authorization: Bearer` access token + rotating refresh token in httpOnly `Secure` `SameSite=Strict` cookie scoped to `/auth/refresh` | one auth path for users, service tokens, and the Phase-2 AI service |
+| D2 | User token transport | `Authorization: Bearer` access token + rotating refresh token in httpOnly `Secure` `SameSite=Strict` cookie scoped to `/api/auth` (covers `/refresh` and `/logout`) | one auth path for users, service tokens, and the Phase-2 AI service |
 | D3 | Request DTO validation | `class-validator` + `class-transformer` (reference); `zod` for env only | Care parses Identity responses with class-validator DTOs too |
 | D4 | Exposed identifiers | numeric `BIGSERIAL` ids, as the PRD shows (`/internal/users?ids=1,2,3`) | enumeration mitigated by deny-by-default ownership checks + rate limits; recorded as hub ADR 0004 |
 
@@ -83,7 +83,7 @@ rotating refresh with reuse detection (reuse → revoke family); status → `sus
 revokes all refresh tokens in the same transaction; `/internal/users?ids=` (batch, max 100) and
 `PATCH /internal/users/:id/status`; `GET /.well-known/jwks.json` for local verification.
 
-**Care deltas**: `btree_gist` `EXCLUDE USING gist (doctor_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH &&) WHERE (status NOT IN ('cancelled','no_show'))`;
+**Care deltas**: `btree_gist` `EXCLUDE USING gist (doctor_user_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH &&) WHERE (status NOT IN ('cancelled','no_show') AND deleted_at IS NULL)` (canonical text: Care `CLAUDE.md` → Database rules);
 slots never stored (computed in doctor tz, rendered in patient tz); booking/reschedule/cancel idempotent
 on `Idempotency-Key`; internal calls 2s timeout + retry/backoff — Case 2 degrades to Redis-cached
 profiles, Case 3 must not degrade (retry until success + alert); every clinical-record access audited;
