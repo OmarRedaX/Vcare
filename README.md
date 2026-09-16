@@ -18,13 +18,22 @@ and pricing and keep a structured record of every consultation.
 
 Full registry: [`catalog/service-catalog.md`](./catalog/service-catalog.md).
 
+**Where the build is:** both Tier 1 services have landed their **foundation** — a runnable Express 5
+skeleton (public + internal listeners, config, DI, errors, logging, request ids, validation, Knex,
+Redis, idempotency, rate limiting, graceful shutdown, worker loop, health probes, first migration,
+Docker, CI). No domain endpoints are implemented yet; the contracts here are the design they get built
+against. Each service's README has its own status and open follow-ups.
+
 ## Start here
 
 | Doc | Read it when you need to… |
 |---|---|
 | [INDEX.md](./INDEX.md) | find where any answer lives — the router, **read first** |
 | [product/prd.md](./product/prd.md) | know what the platform must do and why (source of intent) |
-| [architecture/landscape.md](./architecture/landscape.md) | see both services, how they talk, and the three integration cases |
+| [architecture/overview.md](./architecture/overview.md) | see the whole platform: C4 context and containers, services, shared baseline |
+| [architecture/deployment.md](./architecture/deployment.md) | see how the platform is deployed, routed, and recovered |
+| [architecture/capacity.md](./architecture/capacity.md) | check the load the platform is sized for and each service's sizing |
+| [architecture/landscape.md](./architecture/landscape.md) | see how the services talk and the three integration cases |
 | [architecture/data-ownership.md](./architecture/data-ownership.md) | know which service is the single writer of which data |
 | [adr/](./adr/) | read platform-level architecture decisions |
 | [glossary.md](./glossary.md) | agree on what a term means |
@@ -43,8 +52,9 @@ git clone https://github.com/OmarRedaX/vcare-identity-api.git
 git clone https://github.com/OmarRedaX/vcare-care-api.git
 ```
 
-Docs live in each service repo (source of truth); this hub's cards and contracts are populated by
-`scripts/sync-from-spoke.sh` and are never hand-edited:
+Docs live where their scope is ([ADR 0008](./adr/0008-doc-placement-by-scope.md)): platform-wide docs
+(overview, deployment, capacity, integration, data ownership) live only here; a service's internals live only in
+its repo. This hub's cards and contracts are populated by `scripts/sync-from-spoke.sh` and are never hand-edited:
 
 ```bash
 cd vcare-hub

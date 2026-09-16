@@ -1,71 +1,30 @@
 ---
-title: vcare Platform Landscape (System of Systems)
+title: vcare Platform Landscape — Service Integration
 owner: platform-team
 service: platform
 status: stable
 diataxis: explanation
-last_verified: 2026-09-14
-tags: [architecture, landscape, c4, dependencies, integration, service-auth]
-related: [prd, service-catalog, data-ownership, glossary, adr-0001-two-service-split, adr-0003-service-token-s2s-auth]
+last_verified: 2026-09-15
+tags: [architecture, landscape, dependencies, integration, service-auth, failure-policy]
+related: [prd, overview, deployment, capacity, service-catalog, data-ownership, glossary, adr-0001-two-service-split, adr-0003-service-token-s2s-auth, adr-0005-single-origin-edge-routing, adr-0006-doctor-account-status-via-care-only, adr-0009-doctor-reinstatement-via-care, adr-0010-notification-contact-lookup]
 ---
 
-# vcare Platform Landscape
+# vcare Platform Landscape — Service Integration
 
-How the services fit together. This is the "system of systems" view — each service's internals
-live in its own repo; this doc only shows the seams. Intent comes from [the PRD](../product/prd.md)
-(§4, §5, §11); numbers here match the spoke `CLAUDE.md` files.
-
-## C4 — Level 1: System context
-```
-  ┌──────────┐  ┌──────────┐  ┌──────────┐
-  │ Patient  │  │  Doctor  │  │  Admin   │      (web clients)
-  └────┬─────┘  └────┬─────┘  └────┬─────┘
-       └─────────────┼─────────────┘
-                     │ HTTPS (Bearer access token)
-                     ▼
-  ┌───────────────────────────────────────────────┐
-  │               vcare platform                  │
-  │     identity-service   +   care-service       │
-  └───────┬──────────────────┬─────────────┬──────┘
-          │ email            │ video rooms │ documents, attachments
-          ▼                  ▼             ▼
-  ┌──────────────┐  ┌──────────────────┐  ┌────────────────┐
-  │ Email        │  │ Video room       │  │ Object storage │   (external)
-  │ provider     │  │ provider         │  │                │
-  └──────────────┘  └──────────────────┘  └────────────────┘
-
-  Future (Phase 2): AI & Retrieval service — a third system inside the platform boundary.
-```
-
-## C4 — Level 2: Containers and communication
-```
-                          public ingress (routes /api and /.well-known only)
-          ┌───────────────────────────────┴───────────────────────────────┐
-          ▼                                                               ▼
- ┌──────────────────────────────┐                          ┌──────────────────────────────┐
- │ identity-service             │                          │ care-service                 │
- │  public   :3000  /api/*      │ ◀── JWKS fetch ───────── │  public   :3001  /api/*      │
- │           /.well-known/jwks  │     (cached, refreshed   │                              │
- │  internal :3100  /internal/* │      on unknown kid)     │  internal :3101  /internal/* │
- │                              │ ◀── internal calls ───── │                              │
- │                              │     service token        │                              │
- │                              │     (Cases 1, 2, 3)      │                              │
- └──────┬───────────────┬───────┘                          └──┬─────────┬─────────┬───────┘
-        ▼               ▼                                     ▼         ▼         ▼
- ┌────────────┐  ┌─────────────┐                  ┌──────────────┐ ┌────────┐ ┌────────────────┐
- │ PostgreSQL │  │ Redis       │                  │ PostgreSQL   │ │ Redis  │ │ Object storage │
- │ (identity) │  │ rate limit, │                  │ (care)       │ │ cache, │ │ documents,     │
- │            │  │ idempotency │                  │ + btree_gist │ │ limits,│ │ attachments    │
- └────────────┘  └─────────────┘                  └──────────────┘ │ idemp. │ └────────────────┘
-                                                                   └────────┘
- Internal listeners (:3100, :3101) bind to the private network only; ingress never routes /internal.
-```
+The seams between services: who depends on whom, how they authenticate to each other, and the integration cases
+with their failure policies. Intent comes from [the PRD](../product/prd.md) (§4, §5, §11); numbers here match
+the spoke `CLAUDE.md` files. The rest of the platform view lives next door — the C4 context and container
+diagrams in [overview.md](./overview.md), how everything is deployed in [deployment.md](./deployment.md), the
+load it is sized for in [capacity.md](./capacity.md). Each service's consumer or provider implementation lives
+in its own repo.
 
 ## Dependency graph (who depends on whom)
 ```
 care-service ──JWKS fetch (public keys, cached)─────────────▶ identity-service
 care-service ──PATCH /internal/users/:id/status (Case 1, 3)─▶ identity-service
 care-service ──GET /internal/users?ids= (Case 2)────────────▶ identity-service
+care-service ──PATCH /internal/users/:id/status (Case 4)───▶ identity-service   (planned, ADR 0009)
+care-worker ───GET /internal/users/contacts?ids= (Case 5)──▶ identity-service   (planned, ADR 0010)
 admin tooling ─GET /internal/doctors/:userId/summary───────▶ care-service
 identity-service ── no outbound calls to other services
 ```
@@ -106,8 +65,9 @@ Summary of [ADR 0003](../adr/0003-service-token-s2s-auth.md):
 timeouts, `429`, `502`, `503`, `504`; backoff `200 ms · 2^attempt` ± 20 % jitter, respecting
 `Retry-After`; `X-Request-Id` forwarded; response bodies validated through DTOs (malformed = failure).
 
-## The three integration cases
-All three are Care → Identity. Care is the consumer (all calls through `lib/identity-client`);
+## The integration cases
+All are Care → Identity. Cases 1–3 are live in the contracts; Cases 4 and 5 are decided (hub ADRs 0009, 0010) and
+land provider-first. Care is the consumer (all calls through `lib/identity-client`);
 Identity is the provider (fast, dependency-light internal endpoints, p95 < 50 ms, idempotent writes).
 
 ### Case 1 — Verification unlocks the account
@@ -137,7 +97,7 @@ sequenceDiagram
     end
 ```
 
-- **Endpoint:** `PATCH /internal/users/:id/status` `{ status: "active" | "rejected" | "pending", reason, actorUserId }`, scope `users:status:write`. `pending` is sent when an admin re-opens (or the doctor resubmits) a rejected application, so the account returns to `pending` with it.
+- **Endpoint:** `PATCH /internal/users/:id/status` `{ status: "active" | "rejected" | "pending", reason, actorUserId }`, scope `users:status:write`. `pending` is sent when an admin re-opens (or the doctor resubmits) a rejected application, so the account returns to `pending` with it. A `rejected` doctor can still sign in and refresh (token `status=rejected`) so the resubmission route is reachable (identity-service ADR 0004).
 - **Local-first effects:** the decision, `identity_sync_status='pending'`, and the audit row are committed before the call.
 - **Failure policy:** **retry, keep the decision, report pending.** 3 inline attempts; then `202` with `identitySync: "pending"`, a durable background retrier, and an alert after 15 minutes unsynced.
 - **Gate:** the doctor is bookable only when `verification_status='approved'` **and** `identity_sync_status='synced'`.
@@ -213,18 +173,35 @@ sequenceDiagram
 - **Provider guarantee:** status update + revocation of **all** refresh-token families + status-history row in **one transaction**, only then `200`; idempotent (already `suspended` → `200`) so the caller can retry blindly; a target that is not `active` → `409 InvalidStatusTransition`.
 - **Why:** a suspended doctor holding a live session is a patient-safety problem. Access tokens already issued still expire within 15 minutes — an accepted, documented residual window that Care closes on its own side via `suspended_at`.
 
+### Case 4 — Reinstatement restores the account
+**Trigger:** an admin reinstates a suspended doctor in Care — `PATCH /api/admin/doctors/:id/reinstate` with a reason
+([ADR 0009](../adr/0009-doctor-reinstatement-via-care.md); care ADR 0012).
+
+- **Endpoint:** `PATCH /internal/users/:id/status` `{ status: "active", reason, actorUserId }`, scope `users:status:write`.
+- **Precondition (Care):** the doctor is suspended and that suspension is synced; else `409 InvalidTransition`; not suspended → `200` no-op.
+- **Local-first effects:** `suspended_at` cleared, `identity_sync_status='pending'`, audit row; follow-up flags stay.
+- **Failure policy:** **retry, report pending** (Case 1): 3 inline attempts, `202 identitySync:"pending"`, durable retry, alert after 15 min; `409` non-retryable (page). Bookable only once synced.
+- **Provider guarantee (change, ships first):** the internal route accepts `suspended → active`, idempotent. Identity's public admin route still refuses doctor targets.
+
+### Case 5 — Notification contact lookup
+**Trigger:** `care-worker` delivers a batch of `notification_outbox` rows ([ADR 0010](../adr/0010-notification-contact-lookup.md); care ADR 0011).
+
+- **Endpoint (new, ships first):** `GET /internal/users/contacts?ids=` (≤ 100) → `{ id, email, fullName, locale, status }`, no phone; scope **`users:contact:read`**, allowed only for `care-service`.
+- **Failure policy:** **delay** — rows stay pending with backoff; no request path depends on it.
+- **Handling:** held in worker memory for the batch only; never cached, stored, or logged.
+
 ### Comparison
-| | Case 1 — Verification | Case 2 — Hydration | Case 3 — Suspension |
-|---|---|---|---|
-| Endpoint | `PATCH /internal/users/:id/status` | `GET /internal/users?ids=` | `PATCH /internal/users/:id/status` |
-| Scope | `users:status:write` | `users:read` | `users:status:write` |
-| Criticality | required for the doctor to work | cosmetic (name, avatar) | **security-critical** |
-| Timeout per attempt | 2 s | 2 s | 2 s |
-| Inline attempts | 3 | 2 (1 retry) | ~6 s of attempts |
-| Local state first | decision + `pending` sync | none | suspension + follow-up flags + `pending` sync |
-| **Failure policy** | **retry, keep decision, report pending** | **degrade, never fail** | **must not degrade** |
-| After inline failure | `202 identitySync:"pending"`, background retrier | cached / `profileHydrated:false`, `200` | `503 IdentityUnavailable`, durable job |
-| Alert | after 15 min unsynced | metric `identity_hydration_degraded` | after 3 consecutive failures |
+| | Case 1 — Verification | Case 2 — Hydration | Case 3 — Suspension | Case 4 — Reinstatement | Case 5 — Contacts |
+|---|---|---|---|---|---|
+| Endpoint | `PATCH /internal/users/:id/status` | `GET /internal/users?ids=` | `PATCH /internal/users/:id/status` | `PATCH /internal/users/:id/status` | `GET /internal/users/contacts?ids=` |
+| Scope | `users:status:write` | `users:read` | `users:status:write` | `users:status:write` | `users:contact:read` |
+| Criticality | required for the doctor to work | cosmetic (name, avatar) | **security-critical** | restores access | email timing |
+| Timeout per attempt | 2 s | 2 s | 2 s | 2 s | 2 s |
+| Inline attempts | 3 | 2 (1 retry) | ~6 s of attempts | 3 | 1 per batch |
+| Local state first | decision + `pending` sync | none | suspension + follow-up flags + `pending` sync | cleared suspension + `pending` sync | outbox row committed with the write |
+| **Failure policy** | **retry, keep decision, report pending** | **degrade, never fail** | **must not degrade** | **retry, report pending** | **delay** |
+| After inline failure | `202 identitySync:"pending"`, background retrier | cached / `profileHydrated:false`, `200` | `503 IdentityUnavailable`, durable job | `202 identitySync:"pending"`, durable job | outbox backoff |
+| Alert | after 15 min unsynced | metric `identity_hydration_degraded` | after 3 consecutive failures | after 15 min unsynced | outbox lag |
 
 > **Cases 2 and 3 share a mechanism — the same client, the same token flow, the same `/internal/users`
 > endpoint family — with opposite failure policies.** One degrades gracefully because a missing name
@@ -237,7 +214,8 @@ sequenceDiagram
 |---|---|---|---|---|
 | identity-service | `POST /internal/auth/token` | none (client credentials) | every service client | obtain a 300 s service token |
 | identity-service | `GET /internal/users?ids=` | `users:read` | care-service | batch profile lookup (Case 2) |
-| identity-service | `PATCH /internal/users/:id/status` | `users:status:write` | care-service | account status change; `suspended`/`rejected` revoke all sessions (Cases 1, 3) |
+| identity-service | `PATCH /internal/users/:id/status` | `users:status:write` | care-service | account status change; `suspended`/`rejected` revoke all sessions (Cases 1, 3); `suspended → active` planned (Case 4) |
+| identity-service | `GET /internal/users/contacts?ids=` (planned) | `users:contact:read` | care-service (`care-worker` only) | notification recipient email (Case 5) |
 | care-service | `GET /internal/doctors/:userId/summary` | `doctors:read` | admin tooling, Phase-2 AI (no MVP client) | verification state and specialty |
 
 Both services also expose `GET /internal/health` (no token). Scopes are issued only by Identity;
@@ -246,17 +224,14 @@ service client holds it yet** (tracked in [TODO.md](../TODO.md)). Every change
 to an `/internal/*` shape is breaking for its consumer: change the provider contract first, keep the
 old shape until the consumer ships, and re-sync the hub.
 
-## Known gap — Identity-originated doctor status changes
-In the HTTP-only MVP, if an admin changes a **doctor's** status directly through Identity's
-`PATCH /api/users/:id/status`, **Care is not notified**: Care's `suspended_at` and
-`identity_sync_status` do not change. Two mitigations apply together: (1) the admin console routes
-doctor **suspension** through Care (`PATCH /api/admin/doctors/:id/suspend`), never Identity directly;
-(2) Care reads `status` from hydration (Case 2) and excludes non-active doctors from search when that
-data is fresh. Every token still carries the current `status` after refresh.
-**Reinstating a suspended doctor** (`suspended → active`) is an Identity-only admin action in MVP and
-is not reflected in Care (`suspended_at` stays set) — out of scope for both services.
-Closing the gap (an event, a callback, or a hard rule) is the first candidate topic for
-`/system-design` and is tracked in [TODO.md](../TODO.md).
+## Doctor account status — Care is the only initiator
+Closed by [ADR 0006](../adr/0006-doctor-account-status-via-care-only.md) (2026-09-15). The former gap —
+an admin changing a **doctor's** status directly through Identity's `PATCH /api/users/:id/status` without
+Care being notified — no longer exists: Identity's admin route **refuses doctor targets with `403 Forbidden`**
+and manages patient status only. Every doctor account-status change is requested by Care through
+`PATCH /internal/users/:id/status` (Cases 1 and 3), so Care's `suspended_at` and `identity_sync_status` always
+move with it. Care may still hide non-active doctors from search using hydrated `status` (Case 2) as defence in depth.
+**Reinstating a suspended doctor** also goes through Care — Case 4 ([ADR 0009](../adr/0009-doctor-reinstatement-via-care.md)).
 
 ## Phase 2 — AI & Retrieval placement
 Phase 2 **adds** a third service rather than redesigning the boundary (PRD §12). It has its own

@@ -4,9 +4,9 @@ owner: platform-team
 service: platform
 status: stable
 diataxis: reference
-last_verified: 2026-09-14
+last_verified: 2026-09-15
 tags: [catalog, services, ownership]
-related: [landscape, data-ownership]
+related: [overview, deployment, capacity, landscape, data-ownership]
 ---
 
 # Service Catalog
@@ -32,7 +32,10 @@ Every service on the vcare platform. One row per service; details live in each s
 2. Run the hub sync: `scripts/sync-from-spoke.sh <service> ../<repo>`
    (see [scripts/sync-from-spoke.sh](../scripts/sync-from-spoke.sh)).
 3. Add a row here.
-4. Add a node and its calls to [architecture/landscape.md](../architecture/landscape.md).
-5. Add its owned data to [architecture/data-ownership.md](../architecture/data-ownership.md).
+4. Add it to [architecture/overview.md](../architecture/overview.md) (C4 views, services at a glance), its runtime
+   components and availability row to [architecture/deployment.md](../architecture/deployment.md), and its sizing
+   row to [architecture/capacity.md](../architecture/capacity.md) — details stay in its own repo (ADR 0008).
+5. Add a node and its calls to [architecture/landscape.md](../architecture/landscape.md), and its owned data to
+   [architecture/data-ownership.md](../architecture/data-ownership.md).
 6. If it calls another service's `/internal/*` routes: register a **service client** in Identity with
    its allowed **scopes**, and have the provider define any new scope in its contract first.

@@ -4,9 +4,9 @@ owner: platform-team
 service: platform
 status: stable
 diataxis: reference
-last_verified: 2026-09-14
+last_verified: 2026-09-15
 tags: [glossary, ubiquitous-language, terminology]
-related: [prd, data-ownership, landscape]
+related: [prd, overview, data-ownership, landscape, adr-0008-doc-placement-by-scope]
 ---
 
 # Glossary — Ubiquitous Language
@@ -19,13 +19,15 @@ here **before** it spreads with three different meanings.
 | Term | Definition | Owned by |
 |---|---|---|
 | **User (account)** | An authenticated account: email, phone, password hash, full name, avatar, role, account status, timezone, locale. Identified by a numeric user id that other services reference without a foreign key. | identity-service |
-| **Role** | One of `patient`, `doctor`, `admin`. Set at registration (`patient` or `doctor` only); admins are provisioned by a seed/ops procedure. Carried in the access token. | identity-service |
+| **Role** | One of `patient`, `doctor`, `admin`. Set at registration (`patient` or `doctor` only); admins are created manually by ops in the identity database and set their own password through password reset (identity-service ADR 0010). Carried in the access token. Authorization policies name allowed roles explicitly — there is no "any authenticated user" wildcard. | identity-service |
 | **Account status** | `pending` (doctor awaiting verification), `active`, `suspended`, `rejected`. The source of truth for whether an account may act; carried in the access token. Only valid transitions are allowed. | identity-service |
 | **Patient** | A User with role `patient`. Books consultations and reads their own history. Clinical profile data lives in the Patient profile. | identity-service (account) / care-service (profile) |
 | **Doctor** | A User with role `doctor`: an independent practitioner. Bookable only once verified, active, and accepting patients. | identity-service (account) / care-service (profile) |
 | **Admin** | A User with role `admin`: platform staff who review applications, suspend doctors, manage specialties and help content, and act on bookings on a user's behalf — never read clinical notes. | identity-service |
-| **Access token** | A 15-minute EdDSA-signed JWT (`typ=user`) with `sub`, `role`, `status`, `ev` (email verified). Verified locally by every service against the JWKS; sent as `Authorization: Bearer`. | identity-service |
-| **Refresh token** | An opaque 30-day token in an httpOnly cookie, stored only as a hash. **Rotating**: every use revokes it and issues a successor in the same **family**. **Reuse detection**: presenting an already-rotated token revokes the whole family. | identity-service |
+| **Access token** | A 15-minute EdDSA-signed JWT (`typ=user`) with `sub`, `role`, `status`, `ev` (email verified). Verified locally by every service against the JWKS; sent as `Authorization: Bearer`. Issued for `pending`, `active`, and `rejected` accounts, never `suspended`; `ev` is always true for accounts created by email-first registration. | identity-service |
+| **Refresh token** | An opaque 30-day token in an httpOnly cookie, stored only as a hash. **Rotating**: every use revokes it and issues a successor in the same **family**. **Reuse detection**: presenting an already-rotated token revokes the whole family — except within the **grace window**. | identity-service |
+| **Grace window** | The 10 seconds after a refresh-token rotation during which re-presenting the old token (while its successor is unused) returns `401 RefreshTokenInvalid` without revoking the family or clearing the cookie, so concurrent refreshes from several tabs do not log the user out. | identity-service |
+| **Registration challenge** | The email-ownership proof in email-first registration: `register/start` sends a 6-digit code (10 min, 5 attempts); `register/complete` with the code creates an already-verified account. Start always answers `202`, so it never reveals whether an email is registered. | identity-service |
 | **Service client** | A registered calling service (`client_id`, argon2id-hashed secret, allowed scopes) permitted to request service tokens. | identity-service |
 | **Service token** | A 300-second JWT (`typ=service`, `sub=<client_id>`, `aud`, `scope`) obtained with client credentials at `POST /internal/auth/token`. The only credential accepted on `/internal/*`. No refresh token. | identity-service |
 | **Scope** | A named permission inside a service token: `users:read`, `users:status:write`, `doctors:read`. Requested scopes must be a subset of the service client's allowed scopes. | identity-service |
@@ -53,7 +55,8 @@ here **before** it spreads with three different meanings.
 | **Medical record** | The structured clinical record of a `completed` consultation (chief complaint, examination notes, diagnosis text and code, treatment plan, follow-up interval). One per consultation; written only by the assigned doctor; locked 24 hours after creation. | care-service |
 | **Amendment** | An append-only correction to a medical record after its 24-hour lock. The original is never overwritten. | care-service |
 | **Record attachment** | A file attached to a medical record, stored by object key (never a public URL); cannot be deleted after the lock. | care-service |
-| **Signed URL** | An HMAC-signed, viewer-bound, expiring (≤ 10 minutes) download link for a verification document or record attachment, issued only after an authorization check and audited. | care-service |
+| **Presigned URL** | A short-lived object-storage URL issued by the owning service after an authorization check: a presigned POST (5 minutes, fixed key and size range) to upload into quarantine, or a presigned GET (60 seconds, forced download, audited) to open a verification document or record attachment. A bearer link — never logged or stored (ADR 0011). | care-service |
+| **Upload intent** | A temporary (15-minute), single-use permission to upload one file, bound to its owner and target. It is not a document or attachment: the real row is created only when `complete` verifies the stored object's size and leading bytes. | care-service |
 | **Help article** | Published help content (title, body, category, audience `patient`/`doctor`). The Phase-2 RAG corpus. | care-service |
 | **Audit log** | Append-only rows (actor, role, action, entity, request id, metadata) for every clinical access, status change, verification decision, suspension, and admin action on behalf of a user. Metadata never holds clinical text or PII. | care-service |
 
@@ -66,13 +69,18 @@ here **before** it spreads with three different meanings.
 | **Request id** | A UUID in `X-Request-Id`, accepted or generated at the edge, echoed on every response, forwarded on every internal call, and written on every log line and audit row, so one trace spans both services. | platform |
 | **Idempotency key** | A client-supplied UUID in `Idempotency-Key` that makes a repeated write a no-op: same key + same body replays the original response; same key + different body → `422 IdempotencyConflict`. Required on registration and on booking, reschedule, and cancel. | platform |
 | **Error envelope** | The one error shape shared by both services: `{ "success": false, "error": { "code", "message", "details?", "requestId" } }`. Error codes are PascalCase and stable forever. | platform |
+| **Edge** | The CDN + WAF in front of the single public origin; it routes `/api/*` path prefixes to the owning service and never routes `/internal/*` or health endpoints (ADR 0005). | platform |
+| **Outbox** | A table written in the same transaction as a business change, holding jobs (email sends, later events) that a separate worker processes at least once. Rows hold ids only, never PII or secrets. | each service (identity-service first) |
 
 ## Documentation
 | Term | Definition | Owned by |
 |---|---|---|
 | **Service card** | The one-page cross-cutting summary of a service (`docs/service-card.md` in the spoke), synced into `catalog/<service>.card.md`. | platform |
 | **Spoke** | A service repo that owns its code, its docs, its contract, and its `.claude/` workflow (`vcare-identity-api`, `vcare-care-api`). | platform |
-| **Hub** | This repo — the aggregated cross-service view, the PRD, and platform ADRs. No application code, no `.claude/`. | platform |
+| **Hub** | This repo — every platform-scope doc (overview, deployment, capacity, landscape, data ownership, glossary, platform ADRs, PRD) plus synced service cards and contracts. No application code, no `.claude/`. | platform |
+| **Platform scope** | A doc or fact true of the platform as a whole or of two or more services, or one that another service, ops, or product must agree on without reading one service's code. Lives only in the hub; frontmatter `service: platform` (ADR 0008). | platform |
+| **Service scope** | A doc or fact made true only by one service's code (modules, data model, configuration, its sizing derivation, its alerts). Lives only in that service's `docs/`. | platform |
+| **Roll-up** | The hub's one-row-per-service summary inside a split topic (capacity, deployment, availability, data ownership): headline values quoted with a link to the service doc where they are derived. Each number is authored once. | platform |
 
 ## Deliberate distinctions
 - **User vs Patient/Doctor profile** — a User is the *account* (credentials, role, status, name) in
