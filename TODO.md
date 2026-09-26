@@ -46,8 +46,8 @@ named by care-service), add `contracts/<service>.asyncapi.yaml` to the sync and 
 - [ ] **PRD §14 appendix** (product owner) — replace `POST /auth/register`, `/auth/verify-email`,
   `/auth/resend-verification` with `POST /auth/register/start` and `/auth/register/complete`
   (identity-service ADR 0006).
-- [ ] **Re-sync identity-service** (`scripts/sync-from-spoke.sh`) after its contract changes land, so
-  `catalog/identity-service.card.md` and `contracts/identity-service.openapi.yaml` reflect the new endpoints.
+- [x] **Re-sync identity-service** — baseline contract changes (ADRs 0004/0005/0006/0012) applied and synced
+  2026-09-16. Cases 4 and 5 (above) still need their own identity contract change and re-sync.
 - [x] **Spoke alignment** — both spokes' `CLAUDE.md` and `rbac-ownership-guard` skills updated for ADRs 0005/0006
   and identity-service ADRs 0004–0014 (2026-09-15).
 - [ ] **PII erasure** — identity-service keeps PII on soft delete (its ADR 0011); revisit before GA.
