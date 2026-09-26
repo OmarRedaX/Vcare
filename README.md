@@ -21,8 +21,11 @@ Full registry: [`catalog/service-catalog.md`](./catalog/service-catalog.md).
 **Where the build is:** both Tier 1 services have landed their **foundation** — a runnable Express 5
 skeleton (public + internal listeners, config, DI, errors, logging, request ids, validation, Knex,
 Redis, idempotency, rate limiting, graceful shutdown, worker loop, health probes, first migration,
-Docker, CI). No domain endpoints are implemented yet; the contracts here are the design they get built
-against. Each service's README has its own status and open follow-ups.
+Docker, CI). **identity-service** has also built its **auth** module — the whole public auth surface
+(registration, login, refresh rotation, logout, password flows, own profile, JWKS) plus the outbox worker;
+its `users` module and all `/internal/*` endpoints are next. **care-service** has its foundation test
+suites and manual QA done; no domain endpoints yet. The contracts here are the design the remaining
+modules get built against. Each service's README has its own status and open follow-ups.
 
 ## Start here
 
