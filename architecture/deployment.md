@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: accepted
 diataxis: explanation
-last_verified: 2026-09-15
+last_verified: 2026-10-02
 tags: [architecture, deployment, topology, devops, networking, slo, disaster-recovery, release, observability]
 related: [overview, capacity, landscape, adr-0001-two-service-split, adr-0005-single-origin-edge-routing, adr-0007-managed-container-platform, adr-0008-doc-placement-by-scope]
 ---
@@ -113,7 +113,10 @@ A Case-2 Identity outage never fails Care requests; a Case-3 outage returns `503
    image scan.
 2. **Push** one immutable image, tag = commit SHA.
 3. **Migrate** as a one-off task before rollout. Migrations follow **expand → migrate → contract**: every migration
-   works with both the running and the new code; destructive steps ship in a later release.
+   works with both the running and the new code; destructive steps ship in a later release. The migrate task
+   connects with the service's database **owner** credential, while the API and worker tasks use a separate
+   least-privilege **app** credential (care: owner `care`, app login `care_app` in role `vcare_app`), so grants such
+   as append-only `audit_logs` are real. care's migrate task also creates or updates the app login (`ensure-app-login`) after `latest`, so it holds both secrets; the owner role needs `CREATEROLE`.
 4. **Rolling deploy** with minimum healthy 100 %, maximum 200 %; background components after API tasks.
 5. **Post-deploy smoke** checks defined by the service (e.g. identity: JWKS non-empty, readiness, synthetic login).
 6. **Rollback** = redeploy the previous task definition; the schema stays compatible by step 3.
@@ -130,6 +133,13 @@ ships with its edge-table change.
 | Metrics | derived from logs in the platform's embedded metric format; no tracing SDK in MVP; OpenTelemetry is a future **joint** Identity + Care ADR | identity ADR 0013, care ADR 0007 |
 | Health | load balancers use readiness; orchestrator restarts on liveness; health is never routed by the edge | identity ADR 0014, care ADR 0006 |
 | Alerts | per service, with runbook actions | each service's `docs/runbook.md` |
+
+**Cross-service alerts.** Alerts whose cause sits in one service and whose impact lands in another. The consumer
+emits the metric and owns the runbook entry; the provider's on-call is the usual fix.
+
+| Alert | Emitted by | Condition | Impact if ignored | Runbook |
+|---|---|---|---|---|
+| `IdentityJwksStale` (page) | care-api (`jwks_cache_age_s`, with `jwks_refresh_failed` by `reason`) | `jwks_cache_age_s` > 1 800 — no successful JWKS refresh from Identity for 30 min | at 3 600 s Care distrusts its cached keys and every authenticated Care request returns `401` until a refresh succeeds ([landscape.md](./landscape.md) → Authorization without a network call) | care `docs/runbook.md` → `IdentityJwksStale`; check identity-api `/.well-known/jwks.json` and the care-api → Identity network path |
 
 ## 7. Per-service runtime detail
 Service scope — scaling triggers, health wiring, bottlenecks with mitigations, metrics and alerts, configuration.
