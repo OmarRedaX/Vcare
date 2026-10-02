@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: stable
 diataxis: explanation
-last_verified: 2026-09-15
+last_verified: 2026-10-02
 tags: [architecture, landscape, dependencies, integration, service-auth, failure-policy]
 related: [prd, overview, deployment, capacity, service-catalog, data-ownership, glossary, adr-0001-two-service-split, adr-0003-service-token-s2s-auth, adr-0005-single-origin-edge-routing, adr-0006-doctor-account-status-via-care-only, adr-0009-doctor-reinstatement-via-care, adr-0010-notification-contact-lookup]
 ---
@@ -37,7 +37,9 @@ identity-service ── no outbound calls to other services
 Identity signs user access tokens (EdDSA / Ed25519, 15-minute TTL) carrying `sub` (user id), `role`,
 `status`, and `ev` (email verified), with `aud=["vcare-identity","vcare-care"]`. Care verifies every
 token **locally** against Identity's JWKS (`GET /.well-known/jwks.json`, `Cache-Control: max-age=300`),
-cached in memory and refreshed on an unknown `kid` at most once per minute. There is **no call to
+cached in memory, re-fetched once it is older than the 5-minute `max-age` and on an unknown `kid` (at most once per
+minute). While Identity's JWKS is unreachable, Care keeps verifying with the cached keys for at most **1 hour**;
+after that it trusts none of them. There is **no call to
 Identity per request** — at search volume that would make Identity a single point of failure for the
 whole platform. If the JWKS cannot be fetched and no cached key matches, Care returns `401` — it never
 skips verification.

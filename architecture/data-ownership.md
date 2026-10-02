@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: stable
 diataxis: explanation
-last_verified: 2026-09-15
+last_verified: 2026-10-02
 tags: [architecture, data-ownership, boundaries, privacy]
 related: [prd, landscape, glossary, adr-0001-two-service-split, adr-0006-doctor-account-status-via-care-only, adr-0011-object-storage-host]
 ---
@@ -57,7 +57,7 @@ split a real two-service architecture and not a distributed monolith. Entities c
 | Data | Held by | Source of truth | Rule |
 |---|---|---|---|
 | Hydrated user display fields (`identity:user:<id>`) | care-service Redis | identity-service | TTL 300 s; never copied into Care tables |
-| JWKS public keys | care-service memory | identity-service | refreshed on unknown `kid`, at most once per minute |
+| JWKS public keys | care-service memory | identity-service | re-fetched every 5 min and on unknown `kid` (at most once per minute); stale keys trusted ≤ 1 h while refresh fails |
 | Recipient email for a notification batch | `care-worker` memory only | identity-service | fetched at send time; never cached, persisted, or logged |
 | Service token | care-service memory | identity-service | cached until 30 s before its 300 s expiry |
 | Idempotency records | each service's own Redis | the service that received the write | 24 h; Care also persists the booking key on the consultation row |
