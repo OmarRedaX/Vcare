@@ -1,4 +1,4 @@
-<!-- SYNCED FILE — do not edit here. Source: identity-service/docs/service-card.md. synced_at: 2026-09-18 -->
+<!-- SYNCED FILE — do not edit here. Source: identity-service/docs/service-card.md. synced_at: 2026-10-04 -->
 ---
 title: Identity Service — Service Card
 owner: identity-team
