@@ -37,7 +37,7 @@ consultation lifecycle (waiting room, session join, no-show), patient profiles, 
 `working_hours`, `schedule_exceptions`, `consultation_types`, `consultations`, `patient_profiles`,
 `medical_records`, `medical_record_amendments`, `record_attachments`, `help_articles`, `audit_logs`,
 `identity_sync_jobs`, `notification_outbox`. Identity accounts are referenced only by `*_user_id BIGINT` (no cross-database FK).
-Detail: [architecture/data-model.md](../../vcare-care-api/docs/architecture/data-model.md).
+Detail: [architecture/data-model.md](../E:/Full Stack Projects/Vcare/VCare/vcare-care-api/docs/architecture/data-model.md).
 
 ## Depends on
 | Dependency | Interface | For | Failure policy |
@@ -72,9 +72,9 @@ None in MVP (HTTP-only). Future candidates (no AsyncAPI yet): `consultation.book
 `consultation.rescheduled`, `consultation.cancelled`, `doctor.verified`, `doctor.suspended`.
 
 ## Contract
-- HTTP: [`contracts/openapi.yaml`](../../vcare-care-api/contracts/openapi.yaml) — source of truth.
+- HTTP: [`contracts/openapi.yaml`](../E:/Full Stack Projects/Vcare/VCare/vcare-care-api/contracts/openapi.yaml) — source of truth.
 
 ## Key links
-- Docs index: [INDEX.md](../../vcare-care-api/docs/INDEX.md)
-- System design: [system-design.md](../../vcare-care-api/docs/system-design.md)
-- Runbook: [runbook.md](../../vcare-care-api/docs/runbook.md)
+- Docs index: [INDEX.md](../E:/Full Stack Projects/Vcare/VCare/vcare-care-api/docs/INDEX.md)
+- System design: [system-design.md](../E:/Full Stack Projects/Vcare/VCare/vcare-care-api/docs/system-design.md)
+- Runbook: [runbook.md](../E:/Full Stack Projects/Vcare/VCare/vcare-care-api/docs/runbook.md)
