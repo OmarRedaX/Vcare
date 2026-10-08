@@ -62,7 +62,7 @@ Detail: [architecture/data-model.md](../E:/Full Stack Projects/Vcare/VCare/vcare
 ## Endpoint families
 `/api/health/live`, `/api/health/ready` (live; body `checks: { database, redis, identityJwks }`; `/api/health` removed) · `/api/specialties` (live: `GET` list, `POST` create, `PATCH /{id}` update) · doctors onboarding (live: `POST /api/doctors/apply`, `GET/PATCH /api/doctors/me`, `GET /api/doctors/me/application`; `ALLOWED_CURRENCIES` env; no Identity call) · `/api/doctors/me/documents` (planned) · `/api/doctors`, `/api/doctors/{doctorUserId}`, `/api/doctors/{doctorUserId}/slots` ·
 `/api/doctors/me/working-hours`, `/api/doctors/me/exceptions`, `/api/doctors/me/consultation-types` ·
-`/api/admin/applications` (approve, reject, reopen) · `/api/admin/doctors/{doctorUserId}/suspend`, `/reinstate` (planned) ·
+`/api/admin/applications` (live: queue, detail, document download URL, approve, reject, reopen) · `/api/admin/doctors/{doctorUserId}/suspend`, `/reinstate` (planned) ·
 `/api/patients/me`, `/api/patients/{patientUserId}`, `/api/patients/{patientUserId}/records` ·
 `/api/consultations` (book, list, waiting-room, calendar, get, reschedule, cancel, join, start, complete, no-show, record) ·
 `/api/records/{id}` (+ attachment uploads, complete, download-url — planned) · document uploads and download-url (planned) · `/api/help-articles` · `/api/audit-logs` · `/internal/doctors/{userId}/summary` · `/internal/health/live`, `/internal/health/ready` (live). Everything except health, specialties and the four doctors onboarding routes is designed in the contract, not yet built.
