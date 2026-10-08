@@ -1,4 +1,4 @@
-<!-- SYNCED FILE — do not edit here. Source: identity-service/docs/service-card.md. synced_at: 2026-10-08 -->
+<!-- SYNCED FILE — do not edit here. Source: identity-service/docs/service-card.md. synced_at: 2026-10-09 -->
 ---
 title: Identity Service — Service Card
 owner: identity-team
@@ -20,11 +20,11 @@ sync_to_hub: catalog/identity-service.card.md
 | **Name** | identity-service |
 | **Repo** | `vcare-identity-api` |
 | **Owner** | identity-team |
-| **Status** | `foundation` + `auth` built, tested and reviewed (2026-10-04); `users` (admin) built, tested, QA'd and reviewed (2026-10-07): both listeners, health probes, and the whole public auth surface — registration, login, refresh rotation with reuse detection, logout, password reset by 6-digit code, change password, own profile, JWKS — plus the outbox email worker and retention purges, and the admin `users` surface (list/get, patient suspend/reinstate with status history, session list/revoke). `service-auth` built, tested, QA'd and reviewed (2026-10-08): `POST /internal/auth/token` (client credentials, 300 s EdDSA service tokens, 30/min per IP and 60/min per client), the service guard, and ops-provisioned `service_clients` with secret rotation. `internal-users` (`GET /internal/users`, `PATCH /internal/users/{id}/status`) is still contract-only. All accepted contract changes are applied |
+| **Status** | `foundation` + `auth` built, tested and reviewed (2026-10-04); `users` (admin) built, tested, QA'd and reviewed (2026-10-07): both listeners, health probes, and the whole public auth surface — registration, login, refresh rotation with reuse detection, logout, password reset by 6-digit code, change password, own profile, JWKS — plus the outbox email worker and retention purges, and the admin `users` surface (list/get, patient suspend/reinstate with status history, session list/revoke). `service-auth` built, tested, QA'd and reviewed (2026-10-08): `POST /internal/auth/token` (client credentials, 300 s EdDSA service tokens, 30/min per IP and 60/min per client), the service guard, and ops-provisioned `service_clients` with secret rotation. `internal-users` built, tested and QA'd (2026-10-08): batch profile lookup (Case 2), notification contacts (Case 5), and the status route for Cases 1, 3 and 4, which accepts doctor targets only (ADR 0025). All accepted contract changes are applied |
 | **Tier** | 1 — if it is down, nobody can log in or refresh. Target 99.95 % monthly (ADR 0009) |
 | **Runtime** | Node.js 24 LTS + TypeScript, Express 5; one image, deployed as `identity-api` (public `PORT` 3000 + internal `INTERNAL_PORT` 3100) and `identity-worker` (outbox + purges) on managed containers (hub ADR 0007) |
 | **Datastores** | PostgreSQL (own identity database, Multi-AZ); Redis (rate limits, idempotency — **Tier 2**, degrades without outage, ADR 0008) |
-| **Sizing baseline** | 500 k registered / 50 k DAU (hub `architecture/capacity.md`), ~50 rps peak ([capacity.md](../../vcare-identity-api/docs/architecture/capacity.md)) |
+| **Sizing baseline** | 500 k registered / 50 k DAU (hub `architecture/capacity.md`), ~50 rps peak ([capacity.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/architecture/capacity.md)) |
 
 ## Responsibilities
 Owns **who someone is and whether they may act**: accounts, email-first registration (ownership proven by a
@@ -36,7 +36,7 @@ documents, or any clinical data (care-service).
 
 ## Data owned
 `users`, `refresh_tokens`, `password_resets`, `registration_challenges`, `outbox_jobs`, `service_clients`,
-`user_status_changes`. See [architecture/data-model.md](../../vcare-identity-api/docs/architecture/data-model.md).
+`user_status_changes`. See [architecture/data-model.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/architecture/data-model.md).
 
 ## Depends on
 | Kind | Target | For | Sync? |
@@ -47,9 +47,11 @@ documents, or any clinical data (care-service).
 ## Called by
 | Caller | Endpoint | Why | Failure policy (caller side) |
 |---|---|---|---|
-| care-service | `PATCH /internal/users/{id}/status` | Case 1 — verification decision activates or rejects a doctor account; `pending` when Care re-opens a rejected application | retry on timeout/5xx; `409 InvalidStatusTransition` is non-retryable |
+| care-service | `PATCH /internal/users/{id}/status` | Case 1 — verification decision activates or rejects a doctor account (doctor targets only: a patient or admin target is `403 Forbidden`, ADR 0025); `pending` when Care re-opens a rejected application | retry on timeout/5xx; `409 InvalidStatusTransition` is non-retryable |
 | care-service | `PATCH /internal/users/{id}/status` | Case 3 — suspension revokes all sessions | must not degrade: retry until success + alert; `409` (target not `active`) → alert, no retry |
-| care-service | `GET /internal/users?ids=` | Case 2 — batch profile hydration (≤ 100 ids) | degrade to cached profiles |
+| care-service | `PATCH /internal/users/{id}/status` | Case 4 — reinstatement (`suspended → active`, ADR 0023); idempotent, already `active` → 200 | retry and report pending (Care's policy); `409` → alert, no retry |
+| care-service (care-worker) | `GET /internal/users/contacts?ids=` | Case 5 — notification recipients, scope `users:contact:read` (care-service only, ADR 0024); returns email, name, locale, status, no phone | delay: outbox rows stay pending with backoff; Care never caches, stores or logs the response |
+| care-service | `GET /internal/users?ids=` | Case 2 — batch profile hydration (≤ 100 ids as sent; duplicates collapsed; scope `users:read`) | degrade to cached profiles |
 | care-service | `POST /internal/auth/token` | obtain a 300 s service token (30/min per IP, 60/min per client; production needs `INTERNAL_TRUST_PROXY_HOPS >= 1`) | cache the token, re-exchange about 60 s before expiry, honour `Retry-After` on `429` |
 | care-service, web clients | `GET /.well-known/jwks.json` | verify user access tokens locally | cache keys 5 min |
 | ai-service (Phase 2, future) | `POST /internal/auth/token` | token issuance for a new service client with its own scopes (first holder of `doctors:read`, which no MVP client holds) | — |
@@ -57,7 +59,7 @@ documents, or any clinical data (care-service).
 
 ## Endpoint families
 Implemented today: **auth**, **users** (admin), **keys**, **service-auth**, **health**. The `internal-users` family
-is contract-only until its module is built.
+(batch lookup, contacts lookup, status route with Cases 1, 3 and 4) is built.
 
 | Family | Paths | Listener |
 |---|---|---|
@@ -65,18 +67,18 @@ is contract-only until its module is built.
 | users (admin, built) | `/api/users`, `/api/users/{id}`, `/api/users/{id}/status`, `/api/users/{id}/sessions` | public |
 | keys (built) | `/.well-known/jwks.json` | public |
 | service-auth (built) | `/internal/auth/token` | internal |
-| internal-users (contract-only) | `/internal/users`, `/internal/users/{id}/status` | internal |
+| internal-users (built) | `/internal/users`, `/internal/users/contacts`, `/internal/users/{id}/status` | internal |
 | health (built) | `/api/health/live`, `/api/health/ready`, `/internal/health/live`, `/internal/health/ready` — load balancers only, not routed by the edge | both |
 
 ## Events
 None in MVP (HTTP-only). Future: `user.registered`, `user.status_changed`, carried by the existing outbox
-(ADR 0007) — see [architecture/future.md](../../vcare-identity-api/docs/architecture/future.md).
+(ADR 0007) — see [architecture/future.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/architecture/future.md).
 
 ## Contracts
-- HTTP: [`contracts/openapi.yaml`](../../vcare-identity-api/contracts/openapi.yaml) (source of truth; public + internal)
+- HTTP: [`contracts/openapi.yaml`](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/contracts/openapi.yaml) (source of truth; public + internal)
 
 ## Key links
-- Docs index: [INDEX.md](../../vcare-identity-api/docs/INDEX.md)
-- System design: [system-design.md](../../vcare-identity-api/docs/system-design.md)
-- Runtime and bottlenecks: [architecture/deployment.md](../../vcare-identity-api/docs/architecture/deployment.md) (platform topology: hub `architecture/deployment.md`)
-- Runbook: [runbook.md](../../vcare-identity-api/docs/runbook.md)
+- Docs index: [INDEX.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/INDEX.md)
+- System design: [system-design.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/system-design.md)
+- Runtime and bottlenecks: [architecture/deployment.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/architecture/deployment.md) (platform topology: hub `architecture/deployment.md`)
+- Runbook: [runbook.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/runbook.md)
