@@ -24,7 +24,7 @@ sync_to_hub: catalog/identity-service.card.md
 | **Tier** | 1 — if it is down, nobody can log in or refresh. Target 99.95 % monthly (ADR 0009) |
 | **Runtime** | Node.js 24 LTS + TypeScript, Express 5; one image, deployed as `identity-api` (public `PORT` 3000 + internal `INTERNAL_PORT` 3100) and `identity-worker` (outbox + purges) on managed containers (hub ADR 0007) |
 | **Datastores** | PostgreSQL (own identity database, Multi-AZ); Redis (rate limits, idempotency — **Tier 2**, degrades without outage, ADR 0008) |
-| **Sizing baseline** | 500 k registered / 50 k DAU (hub `architecture/capacity.md`), ~50 rps peak ([capacity.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/architecture/capacity.md)) |
+| **Sizing baseline** | 500 k registered / 50 k DAU (hub `architecture/capacity.md`), ~50 rps peak ([capacity.md](../../vcare-identity-api/docs/architecture/capacity.md)) |
 
 ## Responsibilities
 Owns **who someone is and whether they may act**: accounts, email-first registration (ownership proven by a
@@ -36,7 +36,7 @@ documents, or any clinical data (care-service).
 
 ## Data owned
 `users`, `refresh_tokens`, `password_resets`, `registration_challenges`, `outbox_jobs`, `service_clients`,
-`user_status_changes`. See [architecture/data-model.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/architecture/data-model.md).
+`user_status_changes`. See [architecture/data-model.md](../../vcare-identity-api/docs/architecture/data-model.md).
 
 ## Depends on
 | Kind | Target | For | Sync? |
@@ -72,13 +72,13 @@ Implemented today: **auth**, **users** (admin), **keys**, **service-auth**, **he
 
 ## Events
 None in MVP (HTTP-only). Future: `user.registered`, `user.status_changed`, carried by the existing outbox
-(ADR 0007) — see [architecture/future.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/architecture/future.md).
+(ADR 0007) — see [architecture/future.md](../../vcare-identity-api/docs/architecture/future.md).
 
 ## Contracts
-- HTTP: [`contracts/openapi.yaml`](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/contracts/openapi.yaml) (source of truth; public + internal)
+- HTTP: [`contracts/openapi.yaml`](../../vcare-identity-api/contracts/openapi.yaml) (source of truth; public + internal)
 
 ## Key links
-- Docs index: [INDEX.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/INDEX.md)
-- System design: [system-design.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/system-design.md)
-- Runtime and bottlenecks: [architecture/deployment.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/architecture/deployment.md) (platform topology: hub `architecture/deployment.md`)
-- Runbook: [runbook.md](../E:/Full Stack Projects/Vcare/VCare/vcare-identity-api/docs/runbook.md)
+- Docs index: [INDEX.md](../../vcare-identity-api/docs/INDEX.md)
+- System design: [system-design.md](../../vcare-identity-api/docs/system-design.md)
+- Runtime and bottlenecks: [architecture/deployment.md](../../vcare-identity-api/docs/architecture/deployment.md) (platform topology: hub `architecture/deployment.md`)
+- Runbook: [runbook.md](../../vcare-identity-api/docs/runbook.md)
