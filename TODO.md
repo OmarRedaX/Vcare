@@ -28,12 +28,13 @@ named by care-service), add `contracts/<service>.asyncapi.yaml` to the sync and 
 - [x] **Doctor reinstatement** — designed 2026-09-15 as Case 4 ([ADR 0009](./adr/0009-doctor-reinstatement-via-care.md), care ADR 0012).
 
 ## Follow-ups from care-service `/system-design` (2026-09-15) — provider first
-- [ ] **identity-service `/system-design` or `/construct-spec`:** allow `suspended → active` on
+- [x] **identity-service `/system-design` or `/construct-spec`:** allow `suspended → active` on
   `PATCH /internal/users/:id/status` for doctors (Case 4, hub ADR 0009); amend identity ADR 0012 and its docs.
-- [ ] **identity-service:** add `GET /internal/users/contacts?ids=` + scope `users:contact:read` allowed only for
+- [x] **identity-service:** add `GET /internal/users/contacts?ids=` + scope `users:contact:read` allowed only for
   `care-service` (Case 5, hub ADR 0010); update identity capacity for the extra internal load (≈ 25 k rows/day →
   ≈ 1–2 k calls/day, negligible).
-- [ ] **Re-sync both spokes** (`scripts/sync-from-spoke.sh`) after the contract changes land (care: health
+- [ ] **`/system-design` for identity service-auth (P-1, 2026-10-08):** record in `architecture/landscape.md` that Care caches the service token and re-exchanges ~60 s before expiry, honours `Retry-After` on 429, keeps its client secret in its secret manager (rotation per the identity runbook overlap procedure); record in `architecture/deployment.md` that `INTERNAL_TRUST_PROXY_HOPS >= 1` is a requirement for the Identity internal listener.
+- [x] **Re-sync both spokes** (`scripts/sync-from-spoke.sh`) after the contract changes land (care: health
   live/ready, reinstate endpoint, audit-log time range).
 - [ ] **Glossary:** add "care-worker", "notification outbox", "Case 4 / Case 5".
 - [ ] **care-service file handling** (care ADRs 0013–0015, hub ADR 0011): land the contract changes via

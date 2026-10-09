@@ -488,6 +488,7 @@ paths:
           description: A page of users.
           headers:
             X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
           content:
             application/json:
               schema:
@@ -521,6 +522,7 @@ paths:
           description: The user.
           headers:
             X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
           content:
             application/json:
               schema:
@@ -549,8 +551,8 @@ paths:
         Entering `suspended` revokes all refresh-token families. The status update, revocation, and
         `user_status_changes` row (`actor_user_id` = caller, `actor_service` = null) commit in one transaction.
 
-        `suspended → active` (patient reinstatement) is available **only** here, never on the internal route.
-        Doctor reinstatement has no API path in MVP.
+        `suspended → active` (patient reinstatement) is available here for patients. A doctor's reinstatement is
+        decided in Care and arrives through `PATCH /internal/users/{id}/status` (Case 4, ADR 0023).
       x-roles: [admin]
       x-ownership: none
       x-error-codes: [ValidationFailed, Unauthorized, TokenExpired, Forbidden, AccountSuspended,NotFound, InvalidStatusTransition, InternalError]
@@ -568,6 +570,7 @@ paths:
           description: Status applied (or already in the requested status).
           headers:
             X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
           content:
             application/json:
               schema:
@@ -605,6 +608,7 @@ paths:
           description: A page of sessions.
           headers:
             X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
           content:
             application/json:
               schema:
@@ -750,11 +754,13 @@ paths:
       description: |
         OAuth 2.0 client-credentials grant. `client_secret` is verified against
         `service_clients.client_secret_hash` (argon2id); every requested scope must be in `allowed_scopes`
-        and the requested audience in `allowed_audiences`. Returns a 300-second JWT (`typ=service`,
-        `sub=<client_id>`, `aud=<audience>`, `scope`, `jti`). No refresh token — callers re-exchange before
-        expiry. Field names are snake_case (OAuth 2.0 wire format) inside the standard envelope.
+        and the requested audience in `allowed_audiences`; a scope or an audience outside the client's
+        allow-lists returns `403 InsufficientScope` (checked only after the secret verified). Returns a
+        300-second JWT (`typ=service`, `sub=<client_id>`, `aud=<audience>` as a single string, `scope`,
+        `jti`). No refresh token — callers re-exchange before expiry. Field names are snake_case
+        (OAuth 2.0 wire format) inside the standard envelope.
         Unknown client, wrong secret, and disabled client all return `401 InvalidCredentials`.
-        Rate limit: 60/min per client.
+        Rate limits: 30/min per client IP and 60/min per `client_id` (`429 RateLimited` with `Retry-After`).
       security: []
       x-roles: [service]
       x-ownership: none
@@ -801,8 +807,12 @@ paths:
       summary: Batch user profile lookup (Integration Case 2)
       description: |
         One query: `WHERE id = ANY($1) AND deleted_at IS NULL`. 1..100 comma-separated ids (more →
-        `400 ValidationFailed`). Unknown or soft-deleted ids are **omitted**, not errors; order of `data` is not
-        guaranteed. Returns no email or phone. No outbound calls. Budget p95 < 50 ms for 100 ids.
+        `400 ValidationFailed`). Duplicate ids are accepted and collapsed before the query (`ids=1,1` returns one
+        row); the 100 cap counts entries as sent, before de-duplication, so 101 entries is a `400` even when they
+        are not all distinct. The scope is checked before the query string is validated (a token without
+        `users:read` gets `403 InsufficientScope` even for a malformed `ids`). Unknown or soft-deleted ids are
+        **omitted**, not errors; order of `data` is not guaranteed. Returns no email or phone. No outbound calls.
+        Budget p95 < 50 ms for 100 ids.
       security:
         - serviceToken: []
       x-roles: [service]
@@ -843,6 +853,64 @@ paths:
         '403': { $ref: '#/components/responses/InsufficientScope' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /internal/users/contacts:
+    servers:
+      - url: http://localhost:3100
+        description: Internal listener (network-isolated)
+    get:
+      operationId: getUserContacts
+      tags: [internal-users]
+      summary: Notification contact lookup for care-service's worker (Integration Case 5)
+      description: |
+        Returns the email address, name, locale and status of 1..100 users so care-service's `care-worker` can
+        deliver a notification (hub ADR 0010, identity ADR 0024). **PII-bearing**: the response carries `email`,
+        so it is `Cache-Control: no-store`, the caller must hold it in memory for one batch only (never cache,
+        store or log it), and Identity logs the scope use and the id count, never an address. **No phone**, ever.
+        One query: `WHERE id = ANY($1) AND deleted_at IS NULL`. Unknown or soft-deleted ids are **omitted**, not
+        errors; order of `data` is not guaranteed. Requires scope `users:contact:read`, which only the
+        `care-service` client can hold (a `CHECK` on `service_clients` and the provisioning script refuse it for
+        any other client). No outbound calls. Budget p95 < 50 ms for 100 ids.
+      security:
+        - serviceToken: []
+      x-roles: [service]
+      x-ownership: none
+      x-scope: users:contact:read
+      x-error-codes: [ValidationFailed, ServiceTokenRequired, InsufficientScope, InternalError]
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - name: ids
+          in: query
+          required: true
+          description: Comma-separated positive integer user ids, 1..100 entries (e.g. `ids=1,2,3`).
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 100
+            items: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: Contacts for the ids that exist.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        maxItems: 100
+                        items: { $ref: '#/components/schemas/UserContact' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/ServiceTokenRequired' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /internal/users/{id}/status:
     servers:
       - url: http://localhost:3100
@@ -853,12 +921,20 @@ paths:
       summary: Apply an account status decided by Care (Integration Cases 1 and 3)
       description: |
         Care-allowed transitions: `pending → active|rejected` (Case 1), `rejected → pending` (Care re-opened a
-        rejected application), `active → suspended` (Case 3). `suspended → active` is **not** available here —
-        reinstatement is an admin-only action on the public API and is not propagated to Care in MVP.
+        rejected application), `active → suspended` (Case 3), `suspended → active` (Case 4, doctor reinstatement
+        decided in Care; hub ADR 0009, identity ADR 0023). Entering `active` records a `user_status_changes` row and
+        never revives a revoked refresh token: the user signs in again. This is the **only** API path that
+        reinstates a doctor — the public admin route still refuses doctor targets (ADR 0012).
         **Idempotent:** setting the status the user already has returns 200 with no new history row, so Care can
-        retry blindly (already `suspended` → 200 and still ensures no live refresh tokens remain).
+        retry blindly (already `suspended` → 200 and still ensures no live refresh tokens remain; already `active`
+        → 200 with no new row, which makes a retried Case 4 safe).
         Every other pair → `409 InvalidStatusTransition`, which callers must treat as **non-retryable**
-        (e.g. Case 3 on a target that is not `active` signals drift: Care alerts instead of retrying).
+        (e.g. Case 3 on a target that is not `active`, or Case 4 on a target that is not `suspended`, signals drift:
+        Care alerts instead of retrying).
+        **Doctor targets only (ADR 0025):** the target must be a live user with `role = doctor`; a patient or an admin
+        target → `403 Forbidden` (same code the public route uses for a doctor target), non-retryable. An absent or
+        soft-deleted target is `404 NotFound` and is checked first. `actorUserId` that does not exist is stored as
+        `NULL` in the history row and the call still succeeds (identity spec D-6).
         Entering `suspended` or `rejected` revokes **all** refresh-token families. The status update,
         revocation, and `user_status_changes` row (`actor_user_id` = body `actorUserId` recorded as data only,
         `actor_service` = token `sub`, `request_id`) commit in **one transaction**; only then 200.
@@ -868,7 +944,7 @@ paths:
       x-roles: [service]
       x-ownership: none
       x-scope: users:status:write
-      x-error-codes: [ValidationFailed, ServiceTokenRequired, InsufficientScope, NotFound, InvalidStatusTransition, InternalError]
+      x-error-codes: [ValidationFailed, ServiceTokenRequired, InsufficientScope, Forbidden, NotFound, InvalidStatusTransition, InternalError]
       parameters:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/UserId'
@@ -893,7 +969,7 @@ paths:
                       data: { $ref: '#/components/schemas/StatusChangeResponse' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/ServiceTokenRequired' }
-        '403': { $ref: '#/components/responses/InsufficientScope' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }  # also `Forbidden` for a non-doctor target (ADR 0025); same envelope
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/InvalidStatusTransition' }
         '500': { $ref: '#/components/responses/InternalError' }
@@ -1206,7 +1282,7 @@ components:
                 success: false
                 error: { code: AccountSuspended, message: Account is suspended, details: [], requestId: 7f1c2a9e-3b4d-4e5f-8a6b-1c2d3e4f5a6b }
     InsufficientScope:
-      description: The service token (or requested scope) lacks the required scope.
+      description: The service token lacks the required scope, or the token request names a scope or an audience outside the client's allow-lists.
       headers:
         X-Request-Id: { $ref: '#/components/headers/XRequestId' }
       content:
@@ -1398,6 +1474,18 @@ components:
         status: { $ref: '#/components/schemas/UserStatus' }
         timezone: { type: string }
         locale: { type: string }
+    UserContact:
+      type: object
+      description: |
+        Internal notification-contact shape (Case 5). Contains the email address and no phone. The consumer holds
+        it in memory for one batch only; it is never cached, stored or logged.
+      required: [id, email, fullName, locale, status]
+      properties:
+        id: { type: integer, format: int64 }
+        email: { type: string, format: email }
+        fullName: { type: string }
+        locale: { type: string, description: BCP-47 tag }
+        status: { $ref: '#/components/schemas/UserStatus' }
     Session:
       type: object
       description: One live refresh-token family.
@@ -1405,7 +1493,7 @@ components:
       properties:
         familyId: { type: string, format: uuid }
         deviceInfo: { type: [string, 'null'], maxLength: 255, description: Truncated User-Agent captured at login. }
-        createdAt: { type: string, format: date-time, description: When the family was created (login). }
+        createdAt: { type: string, format: date-time, description: 'Creation time of the earliest retained token of the family (expired token rows are purged, so for long-lived families this can be later than the login time).' }
         lastUsedAt: { type: string, format: date-time, description: When the family's current token was issued. }
         expiresAt: { type: string, format: date-time, description: Expiry of the family's current token. }
     AccessTokenResponse:
@@ -1584,5 +1672,5 @@ components:
         grant_type: { type: string, const: client_credentials }
         client_id: { type: string, pattern: '^[a-z][a-z0-9-]{2,63}$', examples: [care-service] }
         client_secret: { type: string, format: password, minLength: 32, maxLength: 256 }
-        scope: { type: string, pattern: '^[a-z]+(:[a-z]+)+( [a-z]+(:[a-z]+)+)*$', examples: ['users:read users:status:write'] }
-        audience: { type: string, pattern: '^vcare-[a-z0-9-]+$', examples: [vcare-identity] }
+        scope: { type: string, maxLength: 256, pattern: '^[a-z]+(:[a-z]+)+( [a-z]+(:[a-z]+)+)*$', examples: ['users:read users:status:write'] }
+        audience: { type: string, maxLength: 64, pattern: '^vcare-[a-z0-9-]+$', examples: [vcare-identity] }

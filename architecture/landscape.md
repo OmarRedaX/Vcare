@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: stable
 diataxis: explanation
-last_verified: 2026-10-02
+last_verified: 2026-10-08
 tags: [architecture, landscape, dependencies, integration, service-auth, failure-policy]
 related: [prd, overview, deployment, capacity, service-catalog, data-ownership, glossary, adr-0001-two-service-split, adr-0003-service-token-s2s-auth, adr-0005-single-origin-edge-routing, adr-0006-doctor-account-status-via-care-only, adr-0009-doctor-reinstatement-via-care, adr-0010-notification-contact-lookup]
 ---
@@ -100,6 +100,7 @@ sequenceDiagram
 ```
 
 - **Endpoint:** `PATCH /internal/users/:id/status` `{ status: "active" | "rejected" | "pending", reason, actorUserId }`, scope `users:status:write`. `pending` is sent when an admin re-opens (or the doctor resubmits) a rejected application, so the account returns to `pending` with it. A `rejected` doctor can still sign in and refresh (token `status=rejected`) so the resubmission route is reachable (identity-service ADR 0004).
+- **Doctor targets only:** the internal status route (Cases 1, 3 and 4) changes doctor accounts only; a patient or admin target returns `403 Forbidden` with no write, which Care treats as non-retryable. It mirrors the admin route, which refuses doctor targets, so neither route can change an account the other owns (identity-service ADR 0025).
 - **Local-first effects:** the decision, `identity_sync_status='pending'`, and the audit row are committed before the call.
 - **Failure policy:** **retry, keep the decision, report pending.** 3 inline attempts; then `202` with `identitySync: "pending"`, a durable background retrier, and an alert after 15 minutes unsynced.
 - **Gate:** the doctor is bookable only when `verification_status='approved'` **and** `identity_sync_status='synced'`.
