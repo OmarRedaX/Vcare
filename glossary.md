@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: stable
 diataxis: reference
-last_verified: 2026-09-15
+last_verified: 2026-10-09
 tags: [glossary, ubiquitous-language, terminology]
 related: [prd, overview, data-ownership, landscape, adr-0008-doc-placement-by-scope]
 ---
@@ -65,7 +65,11 @@ here **before** it spreads with three different meanings.
 |---|---|---|
 | **Hydration** | Filling display fields (full name, avatar) for a page of Identity user ids with **one** batched `GET /internal/users?ids=` call (≤ 100 ids), read-through a 300-second cache. Integration Case 2. | care-service (consumer) / identity-service (provider) |
 | **Degrade vs must-not-degrade** | The two opposite failure policies. **Degrade**: on provider failure, serve what you have and never fail the request (Case 2). **Must-not-degrade**: never report success until the provider confirms; retry durably and alert (Case 3). Case 1 sits between: keep the decision, retry, report pending. | platform |
-| **Identity sync status** | Care's per-doctor marker (`pending` / `synced` / `failed`) of whether Identity has confirmed the account-status change Care requested (Cases 1 and 3); `failed` means Identity rejected the transition as invalid (drift) and a human must resolve it. A doctor is bookable only when approved **and** synced. | care-service |
+| **Identity sync status** | Care's per-doctor marker (`pending` / `synced` / `failed`) of whether Identity has confirmed the account-status change Care requested (Cases 1, 3 and 4); `failed` means Identity gave a permanent answer (`409 InvalidStatusTransition`, or `400`/`403`/`422`: drift or a refused request that retrying cannot fix) and a human must resolve it. A doctor is bookable only when approved **and** synced. | care-service |
+| **Case 4 (reinstatement)** | Integration case: an admin reinstates a suspended doctor in Care, which then asks Identity to move the account `suspended → active`. Failure policy retry-report-pending (as Case 1): `202 identitySync:"pending"` plus a durable job; never a `503`. See [landscape.md](./architecture/landscape.md) and [ADR 0009](./adr/0009-doctor-reinstatement-via-care.md). | care-service (consumer) / identity-service (provider) |
+| **Case 5 (contact lookup)** | Integration case: `care-worker` fetches recipient emails with `GET /internal/users/contacts?ids=` (scope `users:contact:read`) when delivering notifications. Failure policy delay (outbox backoff); the data is held in worker memory for the batch only, never cached, stored, or logged. See [ADR 0010](./adr/0010-notification-contact-lookup.md). | care-service (consumer) / identity-service (provider) |
+| **care-worker** | Care's background component: the same image as `care-api` with a worker entrypoint, one task, no public or internal listener. It runs named loops: `identity-sync` (one loop serving the verification, suspension and reinstatement jobs, suspension first), `upload-intent-purge`, `audit-partitions`; the notification outbox, reminders and cache refresh are planned. Tier 2: an outage delays work, never blocks a request. | care-service |
+| **Notification outbox** | Care's `notification_outbox` table: a row is inserted in the same transaction as the business write (booking, reschedule, cancellation, schedule block) and delivered by `care-worker` to the email port, with backoff and `dead` after 8 attempts. It never blocks or rolls back a booking, and holds ids only. A specialization of **Outbox** below; recipient emails come from Case 5. | care-service |
 | **Request id** | A UUID in `X-Request-Id`, accepted or generated at the edge, echoed on every response, forwarded on every internal call, and written on every log line and audit row, so one trace spans both services. | platform |
 | **Idempotency key** | A client-supplied UUID in `Idempotency-Key` that makes a repeated write a no-op: same key + same body replays the original response; same key + different body → `422 IdempotencyConflict`. Required on registration and on booking, reschedule, and cancel. | platform |
 | **Error envelope** | The one error shape shared by both services: `{ "success": false, "error": { "code", "message", "details?", "requestId" } }`. Error codes are PascalCase and stable forever. | platform |
