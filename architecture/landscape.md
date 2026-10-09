@@ -66,8 +66,8 @@ Summary of [ADR 0003](../adr/0003-service-token-s2s-auth.md):
 
 **Client defaults (every internal call):** per-attempt timeout **2 s**; retry only on network errors,
 timeouts, `429`, `502`, `503`, `504`; backoff `200 ms · 2^attempt` ± 20 % jitter; `X-Request-Id` forwarded;
-response bodies validated through DTOs (malformed = failure). **As built, Care's client uses its own backoff
-on `429` and does not read `Retry-After`** (open item in [TODO.md](../TODO.md)).
+response bodies validated through DTOs (malformed = failure). **Platform rule (owner decision 2026-10-09):** the
+client uses its own backoff on `429` and does not read `Retry-After`; honouring it is not required.
 
 **Deployment requirement for the provider:** the Identity internal listener runs with
 `INTERNAL_TRUST_PROXY_HOPS >= 1` behind the internal load balancer, so the per-IP limiter on

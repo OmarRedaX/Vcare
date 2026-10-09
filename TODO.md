@@ -34,7 +34,7 @@ named by care-service), add `contracts/<service>.asyncapi.yaml` to the sync and 
   `care-service` (Case 5, hub ADR 0010); update identity capacity for the extra internal load (≈ 25 k rows/day →
   ≈ 1–2 k calls/day, negligible).
 - [x] **`/system-design` for identity service-auth (P-1, 2026-10-08):** recorded 2026-10-09 in `architecture/landscape.md` (token refresh 30 s before expiry as built, secret manager and rotation) and `architecture/deployment.md` (`INTERNAL_TRUST_PROXY_HOPS >= 1`). The ~60 s margin in the original item was not what Care built.
-- [ ] **care-service: honour `Retry-After` on Identity `429`** (found 2026-10-09): Care's `lib/identity-client` uses its own backoff and never reads `Retry-After`. Decide whether to build it (care-service change) or accept own-backoff as the platform rule; `landscape.md` currently records the as-built behaviour.
+- [x] **care-service: `Retry-After` on Identity `429`** (2026-10-09): decided — own-backoff is the platform rule; no Care change. Recorded in `landscape.md`.
 - [x] **Re-sync both spokes** (`scripts/sync-from-spoke.sh`) after the contract changes land (care: health
   live/ready, reinstate endpoint, audit-log time range).
 - [x] **Glossary:** add "care-worker", "notification outbox", "Case 4 / Case 5" (2026-10-09).
