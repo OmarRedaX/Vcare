@@ -807,8 +807,12 @@ paths:
       summary: Batch user profile lookup (Integration Case 2)
       description: |
         One query: `WHERE id = ANY($1) AND deleted_at IS NULL`. 1..100 comma-separated ids (more →
-        `400 ValidationFailed`). Unknown or soft-deleted ids are **omitted**, not errors; order of `data` is not
-        guaranteed. Returns no email or phone. No outbound calls. Budget p95 < 50 ms for 100 ids.
+        `400 ValidationFailed`). Duplicate ids are accepted and collapsed before the query (`ids=1,1` returns one
+        row); the 100 cap counts entries as sent, before de-duplication, so 101 entries is a `400` even when they
+        are not all distinct. The scope is checked before the query string is validated (a token without
+        `users:read` gets `403 InsufficientScope` even for a malformed `ids`). Unknown or soft-deleted ids are
+        **omitted**, not errors; order of `data` is not guaranteed. Returns no email or phone. No outbound calls.
+        Budget p95 < 50 ms for 100 ids.
       security:
         - serviceToken: []
       x-roles: [service]

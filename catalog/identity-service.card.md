@@ -1,4 +1,4 @@
-<!-- SYNCED FILE — do not edit here. Source: identity-service/docs/service-card.md. synced_at: 2026-10-08 -->
+<!-- SYNCED FILE — do not edit here. Source: identity-service/docs/service-card.md. synced_at: 2026-10-09 -->
 ---
 title: Identity Service — Service Card
 owner: identity-team
@@ -20,7 +20,7 @@ sync_to_hub: catalog/identity-service.card.md
 | **Name** | identity-service |
 | **Repo** | `vcare-identity-api` |
 | **Owner** | identity-team |
-| **Status** | `foundation` + `auth` built, tested and reviewed (2026-10-04); `users` (admin) built, tested, QA'd and reviewed (2026-10-07): both listeners, health probes, and the whole public auth surface — registration, login, refresh rotation with reuse detection, logout, password reset by 6-digit code, change password, own profile, JWKS — plus the outbox email worker and retention purges, and the admin `users` surface (list/get, patient suspend/reinstate with status history, session list/revoke). `service-auth` built, tested, QA'd and reviewed (2026-10-08): `POST /internal/auth/token` (client credentials, 300 s EdDSA service tokens, 30/min per IP and 60/min per client), the service guard, and ops-provisioned `service_clients` with secret rotation. `internal-users` (`GET /internal/users`, `PATCH /internal/users/{id}/status`) is still contract-only. All accepted contract changes are applied |
+| **Status** | `foundation` + `auth` built, tested and reviewed (2026-10-04); `users` (admin) built, tested, QA'd and reviewed (2026-10-07): both listeners, health probes, and the whole public auth surface — registration, login, refresh rotation with reuse detection, logout, password reset by 6-digit code, change password, own profile, JWKS — plus the outbox email worker and retention purges, and the admin `users` surface (list/get, patient suspend/reinstate with status history, session list/revoke). `service-auth` built, tested, QA'd and reviewed (2026-10-08): `POST /internal/auth/token` (client credentials, 300 s EdDSA service tokens, 30/min per IP and 60/min per client), the service guard, and ops-provisioned `service_clients` with secret rotation. `internal-users` built, tested and QA'd (2026-10-08): batch profile lookup (Case 2), notification contacts (Case 5), and the status route for Cases 1, 3 and 4, which accepts doctor targets only (ADR 0025). All accepted contract changes are applied |
 | **Tier** | 1 — if it is down, nobody can log in or refresh. Target 99.95 % monthly (ADR 0009) |
 | **Runtime** | Node.js 24 LTS + TypeScript, Express 5; one image, deployed as `identity-api` (public `PORT` 3000 + internal `INTERNAL_PORT` 3100) and `identity-worker` (outbox + purges) on managed containers (hub ADR 0007) |
 | **Datastores** | PostgreSQL (own identity database, Multi-AZ); Redis (rate limits, idempotency — **Tier 2**, degrades without outage, ADR 0008) |
@@ -47,7 +47,7 @@ documents, or any clinical data (care-service).
 ## Called by
 | Caller | Endpoint | Why | Failure policy (caller side) |
 |---|---|---|---|
-| care-service | `PATCH /internal/users/{id}/status` | Case 1 — verification decision activates or rejects a doctor account; `pending` when Care re-opens a rejected application | retry on timeout/5xx; `409 InvalidStatusTransition` is non-retryable |
+| care-service | `PATCH /internal/users/{id}/status` | Case 1 — verification decision activates or rejects a doctor account (doctor targets only: a patient or admin target is `403 Forbidden`, ADR 0025); `pending` when Care re-opens a rejected application | retry on timeout/5xx; `409 InvalidStatusTransition` is non-retryable |
 | care-service | `PATCH /internal/users/{id}/status` | Case 3 — suspension revokes all sessions | must not degrade: retry until success + alert; `409` (target not `active`) → alert, no retry |
 | care-service | `PATCH /internal/users/{id}/status` | Case 4 — reinstatement (`suspended → active`, ADR 0023); idempotent, already `active` → 200 | retry and report pending (Care's policy); `409` → alert, no retry |
 | care-service (care-worker) | `GET /internal/users/contacts?ids=` | Case 5 — notification recipients, scope `users:contact:read` (care-service only, ADR 0024); returns email, name, locale, status, no phone | delay: outbox rows stay pending with backoff; Care never caches, stores or logs the response |
