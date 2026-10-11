@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: stable
 diataxis: explanation
-last_verified: 2026-10-09
+last_verified: 2026-10-08
 tags: [architecture, landscape, dependencies, integration, service-auth, failure-policy]
 related: [prd, overview, deployment, capacity, service-catalog, data-ownership, glossary, adr-0001-two-service-split, adr-0003-service-token-s2s-auth, adr-0005-single-origin-edge-routing, adr-0006-doctor-account-status-via-care-only, adr-0009-doctor-reinstatement-via-care, adr-0010-notification-contact-lookup]
 ---
