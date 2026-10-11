@@ -45,8 +45,10 @@ named by care-service), add `contracts/<service>.asyncapi.yaml` to the sync and 
 - [ ] **Availability:** revisit Care synchronous standby (99.95 %) — the platform is capped at 99.9 % by care ADR 0005.
 
 ## Follow-ups from identity-service `/system-design` (2026-09-15)
-- [ ] **PRD §14 appendix** (product owner) — replace `POST /auth/register`, `/auth/verify-email`,
+- [x] **PRD §14 appendix** (2026-10-11) — replaced `POST /auth/register`, `/auth/verify-email`,
   `/auth/resend-verification` with `POST /auth/register/start` and `/auth/register/complete`
+  (identity-service ADR 0006). Still stale in PRD prose: the `EmailVerification` entity (§ data model) and the
+  "verify email" steps in §7.1 and flow A (verification is now proven before the account exists).
   (identity-service ADR 0006).
 - [x] **Re-sync identity-service** — baseline contract changes (ADRs 0004/0005/0006/0012) applied and synced
   2026-09-16. Cases 4 and 5 (above) still need their own identity contract change and re-sync.

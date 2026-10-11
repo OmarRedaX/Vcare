@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: approved
 diataxis: explanation
-last_verified: 2026-09-14
+last_verified: 2026-10-11
 tags: [prd, product, requirements]
 related: [landscape, data-ownership, glossary]
 ---
@@ -196,9 +196,9 @@ Payments, payouts, and refunds · insurance claims · prescriptions and e-pharma
 ## 14. Appendix — API surface
 **Identity Service**
 ```
-POST   /auth/register              POST   /auth/login
-POST   /auth/refresh               POST   /auth/logout
-POST   /auth/verify-email          POST   /auth/resend-verification
+POST   /auth/register/start        POST   /auth/register/complete
+POST   /auth/login                 POST   /auth/refresh
+POST   /auth/logout
 POST   /auth/forgot-password       POST   /auth/reset-password
 POST   /auth/change-password
 GET    /auth/me                    PATCH  /auth/me
