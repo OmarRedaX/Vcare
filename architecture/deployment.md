@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: accepted
 diataxis: explanation
-last_verified: 2026-10-02
+last_verified: 2026-10-09
 tags: [architecture, deployment, topology, devops, networking, slo, disaster-recovery, release, observability]
 related: [overview, capacity, landscape, adr-0001-two-service-split, adr-0005-single-origin-edge-routing, adr-0007-managed-container-platform, adr-0008-doc-placement-by-scope]
 ---
@@ -73,7 +73,7 @@ same release. CORS is disabled in production. WAF rate-based and bot rules prote
 | `identity-worker` | identity-service | same image, worker entrypoint | 1 | email provider | own Postgres |
 | `identity-migrate` | identity-service | same image, migrate entrypoint | one-off per release | none | own Postgres |
 | `care-api` | care-service | one image, both listeners | min 2, max 6, across AZs | video provider, object storage | own Postgres, own Redis, Identity internal LB and JWKS |
-| `care-worker` | care-service | same image, worker entrypoint | 1 | email provider | own Postgres, own Redis, Identity internal LB |
+| `care-worker` | care-service | same image, worker entrypoint | 1 (loops: one `identity-sync` loop serving the verification, suspension and reinstatement jobs, suspension first; `upload-intent-purge`; `audit-partitions`) | email provider, object storage | own Postgres, own Redis, Identity internal LB |
 | `care-migrate` | care-service | same image, migrate entrypoint | one-off per release | none | own Postgres |
 
 **Network rules (every service):**
@@ -81,6 +81,10 @@ same release. CORS is disabled in production. WAF rate-based and bot rules prote
   balancer or service discovery.
 - Security groups on an internal port admit **registered service clients only** (today: care-api and care-worker → identity-api
   `:3100`; admin tooling and future clients → care-api `:3101`). Identity makes no calls to Care.
+- Each internal listener runs with `INTERNAL_TRUST_PROXY_HOPS >= 1` (the hop count of its internal load balancer;
+  Care refuses to start in production with `0`). Without it every caller shares the load balancer's address in
+  one bucket of the per-IP limiter on `POST /internal/auth/token`. This is a requirement on the **Identity** internal
+  listener as well; see [landscape.md](./landscape.md) → Service-to-service auth.
 - A service's PostgreSQL and Redis accept only that service's task security groups — never another service's
   ([ADR 0001](../adr/0001-two-service-split.md)).
 - Outbound internet egress is granted per component, only to the providers listed above.
@@ -140,6 +144,15 @@ emits the metric and owns the runbook entry; the provider's on-call is the usual
 | Alert | Emitted by | Condition | Impact if ignored | Runbook |
 |---|---|---|---|---|
 | `IdentityJwksStale` (page) | care-api (`jwks_cache_age_s`, with `jwks_refresh_failed` by `reason`) | `jwks_cache_age_s` > 1 800 — no successful JWKS refresh from Identity for 30 min | at 3 600 s Care distrusts its cached keys and every authenticated Care request returns `401` until a refresh succeeds ([landscape.md](./landscape.md) → Authorization without a network call) | care `docs/runbook.md` → `IdentityJwksStale`; check identity-api `/.well-known/jwks.json` and the care-api → Identity network path |
+| `IdentitySuspensionSyncFailing` (page) | care-worker (`error` log event with `kind`, `jobId`, `consecutiveFailures`) | 3 consecutive failed attempts to confirm a suspension, then again at 13, 23, … | a suspended doctor's Identity sessions are not revoked ([landscape.md](./landscape.md) → Case 3) | care `docs/runbook.md` → `IdentitySuspensionSyncFailing`; check Identity internal listener and service-token path |
+| `IdentitySyncTransitionRejected` (page) | care-worker (`error` log event with `kind`, `code`) | Identity gave a permanent answer (`409`, `400`, `403`, `422`) to a status change; job and `identity_sync_status` are `failed` | Care and Identity disagree about the account; retrying cannot fix it, a human must reconcile | care `docs/runbook.md` → `IdentitySyncTransitionRejected` |
+| `IdentityApprovalSyncPending`, `IdentityReinstatementSyncPending` (ticket) | care-worker (`error` log event, once, with `kind`) | a verification or reinstatement job unsynced for 900 s | the doctor stays unbookable, or stays suspended in Identity, until synced ([landscape.md](./landscape.md) → Cases 1 and 4) | care `docs/runbook.md` → the alert name |
+
+**Alert-rule convention.** Rules for these alerts match the **named log events** above. Never key an alert on
+`unhandled_error` or on "any `level=error`" for this purpose: the declared `503 IdentityUnavailable` (Case 3 until
+Identity confirms, and every blind-retry `503`) is logged by Care as `warn handled_error` with status and code, not
+as `error unhandled_error`, so it is expected traffic, not an unhandled fault. Other 5xx still log as
+`unhandled_error`.
 
 ## 7. Per-service runtime detail
 Service scope — scaling triggers, health wiring, bottlenecks with mitigations, metrics and alerts, configuration.

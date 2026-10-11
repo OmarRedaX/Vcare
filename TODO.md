@@ -33,10 +33,11 @@ named by care-service), add `contracts/<service>.asyncapi.yaml` to the sync and 
 - [x] **identity-service:** add `GET /internal/users/contacts?ids=` + scope `users:contact:read` allowed only for
   `care-service` (Case 5, hub ADR 0010); update identity capacity for the extra internal load (≈ 25 k rows/day →
   ≈ 1–2 k calls/day, negligible).
-- [ ] **`/system-design` for identity service-auth (P-1, 2026-10-08):** record in `architecture/landscape.md` that Care caches the service token and re-exchanges ~60 s before expiry, honours `Retry-After` on 429, keeps its client secret in its secret manager (rotation per the identity runbook overlap procedure); record in `architecture/deployment.md` that `INTERNAL_TRUST_PROXY_HOPS >= 1` is a requirement for the Identity internal listener.
+- [x] **`/system-design` for identity service-auth (P-1, 2026-10-08):** recorded 2026-10-09 in `architecture/landscape.md` (token refresh 30 s before expiry as built, secret manager and rotation) and `architecture/deployment.md` (`INTERNAL_TRUST_PROXY_HOPS >= 1`). The ~60 s margin in the original item was not what Care built.
+- [x] **care-service: `Retry-After` on Identity `429`** (2026-10-09): decided — own-backoff is the platform rule; no Care change. Recorded in `landscape.md`.
 - [x] **Re-sync both spokes** (`scripts/sync-from-spoke.sh`) after the contract changes land (care: health
   live/ready, reinstate endpoint, audit-log time range).
-- [ ] **Glossary:** add "care-worker", "notification outbox", "Case 4 / Case 5".
+- [x] **Glossary:** add "care-worker", "notification outbox", "Case 4 / Case 5" (2026-10-09).
 - [ ] **care-service file handling** (care ADRs 0013–0015, hub ADR 0011): land the contract changes via
   `/construct-spec` (uploads + complete, download-url, DTOs without `downloadUrl`, `UploadIntentExpired`), then
   re-sync care-service; IaC for the bucket (Block Public Access, TLS policy, CORS `POST` from the web origin,

@@ -23,7 +23,7 @@ in its own repo.
 care-service ──JWKS fetch (public keys, cached)─────────────▶ identity-service
 care-service ──PATCH /internal/users/:id/status (Case 1, 3)─▶ identity-service
 care-service ──GET /internal/users?ids= (Case 2)────────────▶ identity-service
-care-service ──PATCH /internal/users/:id/status (Case 4)───▶ identity-service   (planned, ADR 0009)
+care-service ──PATCH /internal/users/:id/status (Case 4)───▶ identity-service   (ADR 0009)
 care-worker ───GET /internal/users/contacts?ids= (Case 5)──▶ identity-service   (planned, ADR 0010)
 admin tooling ─GET /internal/doctors/:userId/summary───────▶ care-service
 identity-service ── no outbound calls to other services
@@ -55,7 +55,8 @@ Summary of [ADR 0003](../adr/0003-service-token-s2s-auth.md):
 3. Identity returns a **300-second** JWT: `typ=service`, `sub=<client_id>`, `aud`, `scope`, `jti`.
    No refresh token. Rate limit: 60 requests/min per client.
 4. The caller caches it until 30 s before `exp`, single-flights refreshes, and retries once on `401`
-   with a fresh token.
+   with a fresh token. The client secret lives only in the caller's secret manager; rotation follows the
+   Identity runbook's overlap procedure.
 5. The provider's `service-guard` requires a valid signature, `typ=service`, `aud` containing itself,
    and the route's scope. A user token (even an admin's) → `401 ServiceTokenRequired`; missing scope
    → `403 InsufficientScope`.
@@ -64,13 +65,32 @@ Summary of [ADR 0003](../adr/0003-service-token-s2s-auth.md):
    authorization.
 
 **Client defaults (every internal call):** per-attempt timeout **2 s**; retry only on network errors,
-timeouts, `429`, `502`, `503`, `504`; backoff `200 ms · 2^attempt` ± 20 % jitter, respecting
-`Retry-After`; `X-Request-Id` forwarded; response bodies validated through DTOs (malformed = failure).
+timeouts, `429`, `502`, `503`, `504`; backoff `200 ms · 2^attempt` ± 20 % jitter; `X-Request-Id` forwarded;
+response bodies validated through DTOs (malformed = failure). **Platform rule (owner decision 2026-10-09):** the
+client uses its own backoff on `429` and does not read `Retry-After`; honouring it is not required.
+
+**Deployment requirement for the provider:** the Identity internal listener runs with
+`INTERNAL_TRUST_PROXY_HOPS >= 1` behind the internal load balancer, so the per-IP limiter on
+`POST /internal/auth/token` sees real caller addresses instead of one shared load-balancer address
+([deployment.md](./deployment.md) → Network rules).
 
 ## The integration cases
-All are Care → Identity. Cases 1–3 are live in the contracts; Cases 4 and 5 are decided (hub ADRs 0009, 0010) and
-land provider-first. Care is the consumer (all calls through `lib/identity-client`);
-Identity is the provider (fast, dependency-light internal endpoints, p95 < 50 ms, idempotent writes).
+All are Care → Identity. Cases 1–4 are built in Care (Case 3 and 4 with `admin-doctors`, 2026-10-09) and live in
+the contracts; Case 5 is decided (hub ADR 0010) and lands provider-first. Care is the consumer (all calls through
+`lib/identity-client`); Identity is the provider (fast, dependency-light internal endpoints, p95 < 50 ms, idempotent writes).
+
+**Shared sync engine (Cases 1, 3, 4).** Care runs all three status-change cases through one engine
+(care ADR 0021): the job row is inserted in the decision transaction, one `identity-sync` care-worker loop retries
+due jobs of every kind (suspension first), and these rules hold for every kind:
+- An Identity `400`, `403` or `422` is a **permanent** answer, like `409 InvalidStatusTransition`: retrying cannot
+  fix it, so the job and `identity_sync_status` become `failed`, the local state stays, and on-call is paged
+  (`IdentitySyncTransitionRejected`). `404`, `429`, `5xx`, network errors, a `401` after the one token refresh, and a
+  malformed `200` stay transient.
+- The `reason` sent to Identity is clamped to **500 code points** (Identity's limit) and is **never blank**: Care's
+  DTOs reject blank reasons and the engine falls back to the job kind. Care stores the full text locally; it is never
+  written to audit metadata or logs.
+- An Identity-bound write is idempotent, so a no-op retry from an admin re-reports the sync state instead of
+  claiming success early (see Cases 3 and 4).
 
 ### Case 1 — Verification unlocks the account
 **Trigger:** an admin approves (or rejects, with a reason) a doctor application in Care —
@@ -104,7 +124,7 @@ sequenceDiagram
 - **Local-first effects:** the decision, `identity_sync_status='pending'`, and the audit row are committed before the call.
 - **Failure policy:** **retry, keep the decision, report pending.** 3 inline attempts; then `202` with `identitySync: "pending"`, a durable background retrier, and an alert after 15 minutes unsynced.
 - **Gate:** the doctor is bookable only when `verification_status='approved'` **and** `identity_sync_status='synced'`.
-- **Provider guarantee:** idempotent (setting the current status again → 200, no new history row); only valid transitions (`pending → active | rejected`, `rejected → pending`). Any other pair → `409 InvalidStatusTransition`, which Care treats as **non-retryable**: `identity_sync_status='failed'`, alert, surfaced in the admin console.
+- **Provider guarantee:** idempotent (setting the current status again → 200, no new history row); only valid transitions (`pending → active | rejected`, `rejected → pending`). Any other pair → `409 InvalidStatusTransition`, which Care treats as **non-retryable** (as are `400`/`403`/`422`, see the shared sync engine above): `identity_sync_status='failed'`, alert, surfaced in the admin console.
 - **Why:** neither service can do this alone — Care owns the medical judgment, Identity owns the account state that gates access. The decision must not be lost because Identity blinked, and the doctor must not become bookable before Identity agrees.
 
 ### Case 2 — Batch profile hydration
@@ -170,9 +190,9 @@ sequenceDiagram
 ```
 
 - **Endpoint:** `PATCH /internal/users/:id/status` `{ status: "suspended", reason, actorUserId }`, scope `users:status:write`.
-- **Precondition (Care):** only an approved, synced, not-yet-suspended doctor can be suspended (else `409 InvalidTransition`); suspending an already-suspended doctor is a `200` no-op.
-- **Local-first effects:** local suspension, follow-up flags on every future non-terminal consultation, and audit rows are committed before the call, so Care blocks the doctor immediately.
-- **Failure policy:** **must not degrade — retry until success and alert.** ~6 s of inline attempts, then a durable retry job that survives restarts (backoff capped at 60 s, no attempt limit), alert after **3 consecutive failures**. `200` only once Identity confirms; otherwise `503 IdentityUnavailable` and the admin UI shows sessions are **not yet** revoked. "Until success" covers transient failures (network, timeout, `429`, `5xx`, one token refresh on `401`); a `409 InvalidStatusTransition` from Identity signals drift — retries stop, the local suspension stays, `identity_sync_status='failed'`, and on-call is paged immediately.
+- **Precondition (Care):** only an approved, synced, not-yet-suspended doctor can be suspended (else `409 InvalidTransition`, including while a reinstatement is unsynced). Suspending an already-suspended doctor is a `200` no-op **only when `identity_sync_status='synced'`**; while it is `pending` or `failed` the same `503 IdentityUnavailable` is returned, so a blind retry never reads as confirmation (owner decision 2026-10-09).
+- **Local-first effects:** local suspension, follow-up flags on every future non-terminal consultation (a flag only; nothing is cancelled), the `suspension` job row, and audit rows are committed in one transaction before the call, so Care blocks the doctor immediately.
+- **Failure policy:** **must not degrade — retry until success and alert.** ~6 s of inline attempts, then a durable retry job that survives restarts (backoff capped at 60 s, no attempt limit), alert after **3 consecutive failures**. `200` only once Identity confirms; otherwise `503 IdentityUnavailable` and the admin UI shows sessions are **not yet** revoked. "Until success" covers transient failures (network, timeout, `429`, `5xx`, one token refresh on `401`); a `409 InvalidStatusTransition` from Identity signals drift, and a `400`/`403`/`422` is a permanent refusal — in both cases retries stop, the local suspension stays, `identity_sync_status='failed'`, and on-call is paged immediately. The `503` is a declared response, logged by Care as `warn handled_error` (see [deployment.md](./deployment.md) → Cross-service alerts).
 - **Provider guarantee:** status update + revocation of **all** refresh-token families + status-history row in **one transaction**, only then `200`; idempotent (already `suspended` → `200`) so the caller can retry blindly; a target that is not `active` → `409 InvalidStatusTransition`.
 - **Why:** a suspended doctor holding a live session is a patient-safety problem. Access tokens already issued still expire within 15 minutes — an accepted, documented residual window that Care closes on its own side via `suspended_at`.
 
@@ -181,10 +201,10 @@ sequenceDiagram
 ([ADR 0009](../adr/0009-doctor-reinstatement-via-care.md); care ADR 0012).
 
 - **Endpoint:** `PATCH /internal/users/:id/status` `{ status: "active", reason, actorUserId }`, scope `users:status:write`.
-- **Precondition (Care):** the doctor is suspended and that suspension is synced; else `409 InvalidTransition`; not suspended → `200` no-op.
-- **Local-first effects:** `suspended_at` cleared, `identity_sync_status='pending'`, audit row; follow-up flags stay.
-- **Failure policy:** **retry, report pending** (Case 1): 3 inline attempts, `202 identitySync:"pending"`, durable retry, alert after 15 min; `409` non-retryable (page). Bookable only once synced.
-- **Provider guarantee (change, ships first):** the internal route accepts `suspended → active`, idempotent. Identity's public admin route still refuses doctor targets.
+- **Precondition (Care):** the doctor is suspended and that suspension is synced; else `409 InvalidTransition` (suspend and reinstate cannot overlap while either is unsynced). Not suspended → `200` no-op, or `202 identitySync:"pending"` while the latest reinstatement job is still `pending` or `failed` (owner decision 2026-10-09).
+- **Local-first effects:** `suspended_at` cleared, `identity_sync_status='pending'`, the `reinstatement` job row, audit row; follow-up flags stay.
+- **Failure policy:** **retry, report pending** (Case 1): 3 inline attempts, `202 identitySync:"pending"`, durable retry, alert after 15 min; `409`/`400`/`403`/`422` non-retryable (`failed`, page). **Reinstate never returns `503`.** Bookable only once synced.
+- **Provider guarantee (shipped):** the internal route accepts `suspended → active` for doctor targets, idempotent ([identity ADR 0025](../../vcare-identity-api/docs/adr/0025-internal-status-route-doctor-targets-only.md)). Identity's public admin route still refuses doctor targets.
 
 ### Case 5 — Notification contact lookup
 **Trigger:** `care-worker` delivers a batch of `notification_outbox` rows ([ADR 0010](../adr/0010-notification-contact-lookup.md); care ADR 0011).
@@ -203,7 +223,9 @@ sequenceDiagram
 | Inline attempts | 3 | 2 (1 retry) | ~6 s of attempts | 3 | 1 per batch |
 | Local state first | decision + `pending` sync | none | suspension + follow-up flags + `pending` sync | cleared suspension + `pending` sync | outbox row committed with the write |
 | **Failure policy** | **retry, keep decision, report pending** | **degrade, never fail** | **must not degrade** | **retry, report pending** | **delay** |
-| After inline failure | `202 identitySync:"pending"`, background retrier | cached / `profileHydrated:false`, `200` | `503 IdentityUnavailable`, durable job | `202 identitySync:"pending"`, durable job | outbox backoff |
+| After inline failure | `202 identitySync:"pending"`, background retrier | cached / `profileHydrated:false`, `200` | `503 IdentityUnavailable`, durable job | `202 identitySync:"pending"`, durable job (never `503`) | outbox backoff |
+| No-op retry while unsynced | n/a | n/a | `503` (no-op `200` only when synced) | `202` | n/a |
+| Permanent Identity answer (`409`, `400`/`403`/`422`) | `failed` + page | n/a | `failed` + page | `failed` + page | n/a |
 | Alert | after 15 min unsynced | metric `identity_hydration_degraded` | after 3 consecutive failures | after 15 min unsynced | outbox lag |
 
 > **Cases 2 and 3 share a mechanism — the same client, the same token flow, the same `/internal/users`
@@ -217,7 +239,7 @@ sequenceDiagram
 |---|---|---|---|---|
 | identity-service | `POST /internal/auth/token` | none (client credentials) | every service client | obtain a 300 s service token |
 | identity-service | `GET /internal/users?ids=` | `users:read` | care-service | batch profile lookup (Case 2) |
-| identity-service | `PATCH /internal/users/:id/status` | `users:status:write` | care-service | account status change; `suspended`/`rejected` revoke all sessions (Cases 1, 3); `suspended → active` planned (Case 4) |
+| identity-service | `PATCH /internal/users/:id/status` | `users:status:write` | care-service | account status change; `suspended`/`rejected` revoke all sessions (Cases 1, 3); `suspended → active` (Case 4); doctor targets only |
 | identity-service | `GET /internal/users/contacts?ids=` (planned) | `users:contact:read` | care-service (`care-worker` only) | notification recipient email (Case 5) |
 | care-service | `GET /internal/doctors/:userId/summary` | `doctors:read` | admin tooling, Phase-2 AI (no MVP client) | verification state and specialty |
 
