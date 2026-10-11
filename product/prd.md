@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: approved
 diataxis: explanation
-last_verified: 2026-09-14
+last_verified: 2026-10-12
 tags: [prd, product, requirements]
 related: [landscape, data-ownership, glossary]
 ---
@@ -79,7 +79,7 @@ All internal endpoints require a service token and are unreachable from the publ
 | **User** | email, phone, password_hash, full_name, avatar_url, role (patient/doctor/admin), status (pending/active/suspended/rejected), email_verified_at, timezone, locale |
 | **RefreshToken** | user_id, token_hash, expires_at, revoked_at, device_info |
 | **PasswordReset** | user_id, token, expires_at, used_at |
-| **EmailVerification** | user_id, token, expires_at, verified_at |
+| **RegistrationChallenge** | email, code_hash, expires_at, attempts, consumed_at |
 ### Care Service
 | Entity | Key attributes |
 |---|---|
@@ -100,7 +100,7 @@ All internal endpoints require a service token and are unreachable from the publ
 **Slots are never stored.** Availability is computed per request: WorkingHours − ScheduleExceptions − booked Consultations, sliced by consultation type duration, in the **doctor's timezone**, then rendered in the **patient's timezone**.
 
 ## 7. Functional requirements
-**7.1 Doctor onboarding** — sign up, verify email, complete profile (bio, specialties, languages, experience), upload license and ID, submit for review, track application status. Cannot receive bookings until verified.
+**7.1 Doctor onboarding** — sign up (confirm the emailed 6-digit code to create the account), complete profile (bio, specialties, languages, experience), upload license and ID, submit for review, track application status. Cannot receive bookings until verified.
 **7.2 Verification (Admin)** — queue of pending applications, view documents, approve or reject with a reason *(Integration Case 1)*, re-open a rejected application.
 **7.3 Doctor schedule & pricing** — set recurring weekly hours in own timezone, including split shifts; block dates for leave; override hours for a single date; define consultation types with duration and price; toggle "not accepting new patients." *Blocking time that already holds bookings must warn and list the affected consultations before confirming.*
 **7.4 Discovery (Patient)** — search doctors by specialty, name, language, price range, and availability window; sort by earliest availability, price, or experience; view a doctor's profile with next available slots.
@@ -158,7 +158,7 @@ All internal endpoints require a service token and are unreachable from the publ
 | Manage specialties & help articles | — | — | ✅ |
 
 ## 10. Core flows
-**A. Doctor onboarding** — sign up → verify email → complete profile → upload license → submit → admin reviews → **approval triggers Integration Case 1** → account activated → doctor sets hours and pricing → appears in search.
+**A. Doctor onboarding** — sign up (confirm emailed code) → complete profile → upload license → submit → admin reviews → **approval triggers Integration Case 1** → account activated → doctor sets hours and pricing → appears in search.
 **B. Patient discovery & booking** — search by specialty and language → compare price and earliest availability → open profile → pick consultation type → view slots in own timezone → describe complaint → confirm → `booked` + confirmation email.
 **C. The consultation** — patient joins the waiting room → doctor sees the queue and starts → video session → doctor writes the record with diagnosis and plan → optionally books the follow-up → `completed`.
 **D. Reschedule** — check the policy window → show alternative slots → move atomically, releasing the old slot → notify both sides.
@@ -196,9 +196,9 @@ Payments, payouts, and refunds · insurance claims · prescriptions and e-pharma
 ## 14. Appendix — API surface
 **Identity Service**
 ```
-POST   /auth/register              POST   /auth/login
-POST   /auth/refresh               POST   /auth/logout
-POST   /auth/verify-email          POST   /auth/resend-verification
+POST   /auth/register/start        POST   /auth/register/complete
+POST   /auth/login                 POST   /auth/refresh
+POST   /auth/logout
 POST   /auth/forgot-password       POST   /auth/reset-password
 POST   /auth/change-password
 GET    /auth/me                    PATCH  /auth/me
