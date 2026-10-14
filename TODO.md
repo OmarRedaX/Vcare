@@ -45,15 +45,15 @@ named by care-service), add `contracts/<service>.asyncapi.yaml` to the sync and 
 - [ ] **Availability:** revisit Care synchronous standby (99.95 %) — the platform is capped at 99.9 % by care ADR 0005.
 
 ## Follow-ups from identity-service `/system-design` (2026-09-15)
-- [ ] **PRD §14 appendix** (product owner) — replace `POST /auth/register`, `/auth/verify-email`,
+- [x] **PRD §14 appendix** (product owner, done 2026-10-14) — replace `POST /auth/register`, `/auth/verify-email`,
   `/auth/resend-verification` with `POST /auth/register/start` and `/auth/register/complete`
   (identity-service ADR 0006).
 - [x] **Re-sync identity-service** — baseline contract changes (ADRs 0004/0005/0006/0012) applied and synced
   2026-09-16. Cases 4 and 5 (above) still need their own identity contract change and re-sync.
 - [x] **Spoke alignment** — both spokes' `CLAUDE.md` and `rbac-ownership-guard` skills updated for ADRs 0005/0006
   and identity-service ADRs 0004–0014 (2026-09-15).
-- [ ] **PII erasure** — identity-service keeps PII on soft delete (its ADR 0011); revisit before GA.
-- [ ] **Admin MFA** — first post-MVP security item (identity-service ADR 0010).
+- [ ] **PII erasure** (pre-GA, not MVP) — identity-service keeps PII on soft delete (its ADR 0011); design in identity `docs/architecture/future.md` §7; revisit before GA.
+- [ ] **Admin MFA** (pre-GA, not MVP) — first post-MVP security item (identity-service ADR 0010); design in identity `docs/architecture/future.md` §2.
 - [ ] **`doctors:read` consumer** — the scope and Care's `/internal/doctors/:userId/summary` exist, but no
   service client holds the scope in MVP. Provision one when admin tooling or the Phase-2 AI service needs it.
 
