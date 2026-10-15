@@ -54,8 +54,8 @@ named by care-service), add `contracts/<service>.asyncapi.yaml` to the sync and 
   2026-09-16. Cases 4 and 5 (above) still need their own identity contract change and re-sync.
 - [x] **Spoke alignment** — both spokes' `CLAUDE.md` and `rbac-ownership-guard` skills updated for ADRs 0005/0006
   and identity-service ADRs 0004–0014 (2026-09-15).
-- [ ] **PII erasure** — identity-service keeps PII on soft delete (its ADR 0011); revisit before GA.
-- [ ] **Admin MFA** — first post-MVP security item (identity-service ADR 0010).
+- [ ] **PII erasure** (pre-GA, not MVP) — identity-service keeps PII on soft delete (its ADR 0011); design in identity `docs/architecture/future.md` §7; revisit before GA.
+- [ ] **Admin MFA** (pre-GA, not MVP) — first post-MVP security item (identity-service ADR 0010); design in identity `docs/architecture/future.md` §2.
 - [ ] **`doctors:read` consumer** — the scope and Care's `/internal/doctors/:userId/summary` exist, but no
   service client holds the scope in MVP. Provision one when admin tooling or the Phase-2 AI service needs it.
 
