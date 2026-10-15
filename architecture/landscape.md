@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: stable
 diataxis: explanation
-last_verified: 2026-10-08
+last_verified: 2026-10-14
 tags: [architecture, landscape, dependencies, integration, service-auth, failure-policy]
 related: [prd, overview, deployment, capacity, service-catalog, data-ownership, glossary, adr-0001-two-service-split, adr-0003-service-token-s2s-auth, adr-0005-single-origin-edge-routing, adr-0006-doctor-account-status-via-care-only, adr-0009-doctor-reinstatement-via-care, adr-0010-notification-contact-lookup]
 ---
@@ -24,7 +24,7 @@ care-service ──JWKS fetch (public keys, cached)─────────�
 care-service ──PATCH /internal/users/:id/status (Case 1, 3)─▶ identity-service
 care-service ──GET /internal/users?ids= (Case 2)────────────▶ identity-service
 care-service ──PATCH /internal/users/:id/status (Case 4)───▶ identity-service   (ADR 0009)
-care-worker ───GET /internal/users/contacts?ids= (Case 5)──▶ identity-service   (planned, ADR 0010)
+care-worker ───GET /internal/users/contacts?ids= (Case 5)──▶ identity-service   (built in Care 2026-10-12, ADR 0010)
 admin tooling ─GET /internal/doctors/:userId/summary───────▶ care-service
 identity-service ── no outbound calls to other services
 ```
@@ -76,7 +76,7 @@ client uses its own backoff on `429` and does not read `Retry-After`; honouring 
 
 ## The integration cases
 All are Care → Identity. Cases 1–4 are built in Care (Case 3 and 4 with `admin-doctors`, 2026-10-09) and live in
-the contracts; Case 5 is decided (hub ADR 0010) and lands provider-first. Care is the consumer (all calls through
+the contracts; Case 5 (hub ADR 0010) is built in Care since 2026-10-12 (`notifications`: `getContacts`, delivery loop, log-only email adapter), provider side per identity ADR 0024. Care is the consumer (all calls through
 `lib/identity-client`); Identity is the provider (fast, dependency-light internal endpoints, p95 < 50 ms, idempotent writes).
 
 **Shared sync engine (Cases 1, 3, 4).** Care runs all three status-change cases through one engine
@@ -210,8 +210,9 @@ sequenceDiagram
 **Trigger:** `care-worker` delivers a batch of `notification_outbox` rows ([ADR 0010](../adr/0010-notification-contact-lookup.md); care ADR 0011).
 
 - **Endpoint (new, ships first):** `GET /internal/users/contacts?ids=` (≤ 100) → `{ id, email, fullName, locale, status }`, no phone; scope **`users:contact:read`**, allowed only for `care-service`.
-- **Failure policy:** **delay** — rows stay pending with backoff; no request path depends on it.
-- **Handling:** held in worker memory for the batch only; never cached, stored, or logged.
+- **Failure policy:** **delay** — rows stay pending with backoff and the failed lookup does **not** consume a delivery attempt (30 s, doubling per consecutive failed batch, cap 30 min); no request path depends on it. A `403`, a token without the scope, a malformed answer and every transient error are treated the same way (delay, then the lag alert is the operator signal).
+- **Token:** Care requests a **separate** service token with only `users:contact:read` for this call; it is never merged with the status/hydration token and `care-api` never asks for it.
+- **Handling:** held in worker memory for the batch only; never cached, stored, or logged. Unknown or non-active recipients are skipped (no email), not retried.
 
 ### Comparison
 | | Case 1 — Verification | Case 2 — Hydration | Case 3 — Suspension | Case 4 — Reinstatement | Case 5 — Contacts |
@@ -223,10 +224,10 @@ sequenceDiagram
 | Inline attempts | 3 | 2 (1 retry) | ~6 s of attempts | 3 | 1 per batch |
 | Local state first | decision + `pending` sync | none | suspension + follow-up flags + `pending` sync | cleared suspension + `pending` sync | outbox row committed with the write |
 | **Failure policy** | **retry, keep decision, report pending** | **degrade, never fail** | **must not degrade** | **retry, report pending** | **delay** |
-| After inline failure | `202 identitySync:"pending"`, background retrier | cached / `profileHydrated:false`, `200` | `503 IdentityUnavailable`, durable job | `202 identitySync:"pending"`, durable job (never `503`) | outbox backoff |
+| After inline failure | `202 identitySync:"pending"`, background retrier | cached / `profileHydrated:false`, `200` | `503 IdentityUnavailable`, durable job | `202 identitySync:"pending"`, durable job (never `503`) | outbox backoff, attempt not consumed |
 | No-op retry while unsynced | n/a | n/a | `503` (no-op `200` only when synced) | `202` | n/a |
 | Permanent Identity answer (`409`, `400`/`403`/`422`) | `failed` + page | n/a | `failed` + page | `failed` + page | n/a |
-| Alert | after 15 min unsynced | metric `identity_hydration_degraded` | after 3 consecutive failures | after 15 min unsynced | outbox lag |
+| Alert | after 15 min unsynced | metric `identity_hydration_degraded` | after 3 consecutive failures | after 15 min unsynced | outbox lag (`OutboxLagHigh`), metric `identity_call_failed{case=contacts}` |
 
 > **Cases 2 and 3 share a mechanism — the same client, the same token flow, the same `/internal/users`
 > endpoint family — with opposite failure policies.** One degrades gracefully because a missing name
@@ -240,7 +241,7 @@ sequenceDiagram
 | identity-service | `POST /internal/auth/token` | none (client credentials) | every service client | obtain a 300 s service token |
 | identity-service | `GET /internal/users?ids=` | `users:read` | care-service | batch profile lookup (Case 2) |
 | identity-service | `PATCH /internal/users/:id/status` | `users:status:write` | care-service | account status change; `suspended`/`rejected` revoke all sessions (Cases 1, 3); `suspended → active` (Case 4); doctor targets only |
-| identity-service | `GET /internal/users/contacts?ids=` (planned) | `users:contact:read` | care-service (`care-worker` only) | notification recipient email (Case 5) |
+| identity-service | `GET /internal/users/contacts?ids=` (consumer built 2026-10-12) | `users:contact:read` | care-service (`care-worker` only) | notification recipient email, name and locale (Case 5) |
 | care-service | `GET /internal/doctors/:userId/summary` | `doctors:read` | admin tooling, Phase-2 AI (no MVP client) | verification state and specialty |
 
 Both services also expose `GET /internal/health` (no token). Scopes are issued only by Identity;
