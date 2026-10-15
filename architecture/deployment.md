@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: accepted
 diataxis: explanation
-last_verified: 2026-10-09
+last_verified: 2026-10-15
 tags: [architecture, deployment, topology, devops, networking, slo, disaster-recovery, release, observability]
 related: [overview, capacity, landscape, adr-0001-two-service-split, adr-0005-single-origin-edge-routing, adr-0007-managed-container-platform, adr-0008-doc-placement-by-scope]
 ---
@@ -147,6 +147,7 @@ emits the metric and owns the runbook entry; the provider's on-call is the usual
 | `IdentitySuspensionSyncFailing` (page) | care-worker (`error` log event with `kind`, `jobId`, `consecutiveFailures`) | 3 consecutive failed attempts to confirm a suspension, then again at 13, 23, … | a suspended doctor's Identity sessions are not revoked ([landscape.md](./landscape.md) → Case 3) | care `docs/runbook.md` → `IdentitySuspensionSyncFailing`; check Identity internal listener and service-token path |
 | `IdentitySyncTransitionRejected` (page) | care-worker (`error` log event with `kind`, `code`) | Identity gave a permanent answer (`409`, `400`, `403`, `422`) to a status change; job and `identity_sync_status` are `failed` | Care and Identity disagree about the account; retrying cannot fix it, a human must reconcile | care `docs/runbook.md` → `IdentitySyncTransitionRejected` |
 | `IdentityApprovalSyncPending`, `IdentityReinstatementSyncPending` (ticket) | care-worker (`error` log event, once, with `kind`) | a verification or reinstatement job unsynced for 900 s | the doctor stays unbookable, or stays suspended in Identity, until synced ([landscape.md](./landscape.md) → Cases 1 and 4) | care `docs/runbook.md` → the alert name |
+| `NotificationContactsForbidden` (ticket) | care-worker (`notification_contacts_forbidden` counter and `error` log event) | any occurrence: Identity answered `401` after a refresh or `403`, or the contact token lacks `users:contact:read` | no booking, reminder or cancellation email is delivered (rows are only delayed, never dead-lettered) until the care-service client is granted the scope in Identity ([landscape.md](./landscape.md) → Case 5) | care `docs/runbook.md` → `NotificationContactsForbidden`; check the client's scopes in identity-api |
 
 **Alert-rule convention.** Rules for these alerts match the **named log events** above. Never key an alert on
 `unhandled_error` or on "any `level=error`" for this purpose: the declared `503 IdentityUnavailable` (Case 3 until

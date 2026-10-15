@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: stable
 diataxis: explanation
-last_verified: 2026-10-02
+last_verified: 2026-10-14
 tags: [architecture, data-ownership, boundaries, privacy]
 related: [prd, landscape, glossary, adr-0001-two-service-split, adr-0006-doctor-account-status-via-care-only, adr-0011-object-storage-host]
 ---
@@ -19,7 +19,7 @@ split a real two-service architecture and not a distributed monolith. Entities c
 ## identity-service
 | Data domain | Owner (single writer) | Others access via | Notes |
 |---|---|---|---|
-| Users — email, phone, password hash, role, email-verified timestamp | identity-service | access-token claims (`sub`, `role`, `ev`); admin `GET /api/users`; `GET /internal/users/contacts?ids=` (email only, planned) | email leaves Identity only through the contacts lookup to `care-worker` for delivery, never stored by Care ([ADR 0010](../adr/0010-notification-contact-lookup.md)); phone never leaves Identity through `/internal/*`; password hash never leaves Identity at all |
+| Users — email, phone, password hash, role, email-verified timestamp | identity-service | access-token claims (`sub`, `role`, `ev`); admin `GET /api/users`; `GET /internal/users/contacts?ids=` (email, name and locale; consumer built in Care 2026-10-12) | email leaves Identity only through the contacts lookup to `care-worker` for delivery, never stored by Care ([ADR 0010](../adr/0010-notification-contact-lookup.md)); phone never leaves Identity through `/internal/*`; password hash never leaves Identity at all |
 | Users — profile display fields: full name, avatar, timezone, locale | identity-service | `GET /internal/users?ids=` (Case 2) | names/avatars: Care hydrates via Case 2, caches ≤ 300 s, never stores |
 | Account status (`pending`, `active`, `suspended`, `rejected`) | identity-service | token `status` claim; `GET /internal/users?ids=` | account status: Identity writes; Care requests changes via Case 1/3 (`PATCH /internal/users/:id/status`); for **doctors** Care is the only initiator — Identity's admin route refuses doctor targets ([ADR 0006](../adr/0006-doctor-account-status-via-care-only.md)) |
 | Account status history (`user_status_changes`) | identity-service | not exposed to other services | who changed a status, when, why, from which service; written in the same transaction as the change |

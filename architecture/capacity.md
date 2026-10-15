@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: accepted
 diataxis: explanation
-last_verified: 2026-09-15
+last_verified: 2026-10-14
 tags: [architecture, capacity, sizing, load, scale, platform]
 related: [overview, deployment, landscape, prd, adr-0008-doc-placement-by-scope]
 ---
@@ -56,7 +56,7 @@ At 10×: ~1 M hydration calls/day reach Identity (~90 rps) — still PK lookups,
 | Service | Legit peak | Compute | PostgreSQL | Storage (steady / provisioned) | Redis | 10× verdict | Derivation |
 |---|---|---|---|---|---|---|---|
 | identity-service | ~40–50 rps (refresh-dominated); login ~5/s at campaign peak | `identity-api` 2 × (1 vCPU, 2 GB), autoscale to 6; `identity-worker` 1 × (0.5 vCPU, 1 GB) | 2 vCPU / 8 GB class, Multi-AZ; ~100 qps, ~30 writes/s, ~27 connections | ≈ 7 GB / 50 GB with autoscaling | smallest managed node with a replica (< 256 MB) | holds with scale-out; `refresh_tokens` needs monthly partitioning (new ADR) | [`vcare-identity-api/docs/architecture/capacity.md`](../../vcare-identity-api/docs/architecture/capacity.md) |
-| care-service | ≈ 105 rps (search 25, slots 25, lists 17); bookings 7.5 k/day (0.6/s) | `care-api` 2 × (1 vCPU, 2 GB), autoscale to 6; `care-worker` 1 × (0.5 vCPU, 1 GB) | 2 vCPU / 8 GB class, primary + async replica; ≈ 400 qps, ≈ 10 writes/s, ≈ 25 connections | ≈ 52 GB / 100 GB with autoscaling (audit 36 GB/yr); object storage ≈ 2 TB/yr | smallest managed node with a replica (< 100 MB) | holds with scale-out (≈ 15–20 API tasks, connection proxy, replica reads) | [`vcare-care-api/docs/architecture/capacity.md`](../../vcare-care-api/docs/architecture/capacity.md) |
+| care-service | ≈ 105 rps (search 25, slots 25, lists 17); bookings 7.5 k/day (0.6/s) | `care-api` 2 × (1 vCPU, 2 GB), autoscale to 6; `care-worker` 1 × (0.5 vCPU, 1 GB) | 2 vCPU / 8 GB class, primary + async replica; ≈ 400 qps, ≈ 10 writes/s, ≈ 29–49 connections (`DATABASE_POOL_MAX` 10–20 per API task plus probe; `care-worker` pool 6) | ≈ 52 GB / 100 GB with autoscaling (audit 36 GB/yr); object storage ≈ 2 TB/yr | smallest managed node with a replica (< 100 MB) | holds with scale-out (≈ 15–20 API tasks, connection proxy, replica reads) | [`vcare-care-api/docs/architecture/capacity.md`](../../vcare-care-api/docs/architecture/capacity.md) |
 
 Care's consultation volume (7.5 k/day) is a Care-authored assumption in its derivation, not a platform input.
 
