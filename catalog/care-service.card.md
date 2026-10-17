@@ -1,4 +1,4 @@
-<!-- SYNCED FILE — do not edit here. Source: care-service/docs/service-card.md. synced_at: 2026-10-15 -->
+<!-- SYNCED FILE — do not edit here. Source: care-service/docs/service-card.md. synced_at: 2026-10-17 -->
 ---
 title: Care Service — Service Card
 owner: care-team
