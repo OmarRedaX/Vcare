@@ -38,10 +38,19 @@ named by care-service), add `contracts/<service>.asyncapi.yaml` to the sync and 
 - [x] **Re-sync both spokes** (`scripts/sync-from-spoke.sh`) after the contract changes land (care: health
   live/ready, reinstate endpoint, audit-log time range).
 - [x] **Glossary:** add "care-worker", "notification outbox", "Case 4 / Case 5" (2026-10-09).
-- [ ] **care-service file handling** (care ADRs 0013–0015, hub ADR 0011): land the contract changes via
-  `/construct-spec` (uploads + complete, download-url, DTOs without `downloadUrl`, `UploadIntentExpired`), then
-  re-sync care-service; IaC for the bucket (Block Public Access, TLS policy, CORS `POST` from the web origin,
-  `quarantine/*` lifecycle) and the web app's CSP (`form-action`/`connect-src` for the bucket host).
+- [x] **care-service file handling — contract and code** (care ADRs 0013–0015 and 0022, hub ADR 0011): built for verification
+  documents (2026-10-08) and record attachments (2026-10-20); contract synced (uploads + complete, download-url, DTOs without
+  `downloadUrl`, `UploadIntentExpired`, `AttachmentLimitReached`).
+- [ ] **care-service file handling — bucket IaC and web CSP** (decided 2026-10-20, `/system-design`; derivation in care
+  `docs/architecture/file-handling.md`): the bucket module must name **both final prefixes**, `verification-documents/*` and
+  `record-attachments/*`, wherever it names a prefix:
+  - Block Public Access on, TLS-only bucket policy, SSE-S3 (unchanged for clinical attachments), CORS `POST` from the web origin only.
+  - Lifecycle: `quarantine/*` expires after 24 h; `verification-documents/*` **and `record-attachments/*`** move to infrequent access after 90 days.
+  - IAM, `care-api` task role: `s3:PutObject` for presigned POST on `quarantine/*` only; `s3:GetObject` and `s3:CopyObject` source/target
+    on `quarantine/*` and both final prefixes (presigned GET, byte-range read and promote); `s3:DeleteObject` on `quarantine/*` and on
+    the final prefixes (rollback cleanup of a promoted object).
+  - IAM, `care-worker` task role: `s3:ListBucket` and `s3:DeleteObject` on `quarantine/*` (upload-intent purge).
+  - The web app's CSP (`form-action`/`connect-src` for the bucket host).
 - [ ] **Availability:** revisit Care synchronous standby (99.95 %) — the platform is capped at 99.9 % by care ADR 0005.
 
 ## Follow-ups from identity-service `/system-design` (2026-09-15)
