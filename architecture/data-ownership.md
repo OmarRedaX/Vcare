@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: stable
 diataxis: explanation
-last_verified: 2026-10-14
+last_verified: 2026-10-21
 tags: [architecture, data-ownership, boundaries, privacy]
 related: [prd, landscape, glossary, adr-0001-two-service-split, adr-0006-doctor-account-status-via-care-only, adr-0011-object-storage-host]
 ---
@@ -61,7 +61,8 @@ split a real two-service architecture and not a distributed monolith. Entities c
 | Recipient email for a notification batch | `care-worker` memory only | identity-service | fetched at send time; never cached, persisted, or logged |
 | Service token | care-service memory | identity-service | cached until 30 s before its 300 s expiry |
 | Idempotency records | each service's own Redis | the service that received the write | 24 h; Care also persists the booking key on the consultation row |
-| `next_available_at`, computed slot windows | care-service Redis | care-service inputs | derived, TTL-bound, invalidated on input change |
+| Next-available rank index (`next-available:index`), free-slot maps (`free-map:*`), computed slot windows (`slots:*`) | care-service Redis | care-service inputs | derived, TTL- or sweep-bound, removed or version-bumped on input change; never stored in Postgres (care ADR 0024) |
+| Doctor name index (`name-index`) — lowercased display names of bookable doctors, for the search name filter | care-service Redis | identity-service | rebuilt every 300 s by `care-worker` through Case 2 hydration, TTL 15 min; never copied into Care tables, never logged (care ADR 0025) |
 
 ## Rules
 1. **One writer per piece of data.** If two services want to write the same data, the boundary is
