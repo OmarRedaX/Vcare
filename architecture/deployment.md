@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: accepted
 diataxis: explanation
-last_verified: 2026-10-15
+last_verified: 2026-10-21
 tags: [architecture, deployment, topology, devops, networking, slo, disaster-recovery, release, observability]
 related: [overview, capacity, landscape, adr-0001-two-service-split, adr-0005-single-origin-edge-routing, adr-0007-managed-container-platform, adr-0008-doc-placement-by-scope]
 ---
@@ -73,7 +73,7 @@ same release. CORS is disabled in production. WAF rate-based and bot rules prote
 | `identity-worker` | identity-service | same image, worker entrypoint | 1 | email provider | own Postgres |
 | `identity-migrate` | identity-service | same image, migrate entrypoint | one-off per release | none | own Postgres |
 | `care-api` | care-service | one image, both listeners | min 2, max 6, across AZs | video provider, object storage | own Postgres, own Redis, Identity internal LB and JWKS |
-| `care-worker` | care-service | same image, worker entrypoint | 1 (loops: one `identity-sync` loop serving the verification, suspension and reinstatement jobs, suspension first; `upload-intent-purge`; `audit-partitions`) | email provider, object storage | own Postgres, own Redis, Identity internal LB |
+| `care-worker` | care-service | same image, worker entrypoint | 1 (loops: one `identity-sync` loop serving the verification, suspension and reinstatement jobs, suspension first; `upload-intent-purge`; `audit-partitions`; notification loops; designed, not built: `availability-refresh`, `availability-sweep`) | email provider, object storage | own Postgres, own Redis, Identity internal LB |
 | `care-migrate` | care-service | same image, migrate entrypoint | one-off per release | none | own Postgres |
 
 **Network rules (every service):**

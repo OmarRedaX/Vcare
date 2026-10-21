@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: accepted
 diataxis: explanation
-last_verified: 2026-10-14
+last_verified: 2026-10-21
 tags: [architecture, capacity, sizing, load, scale, platform]
 related: [overview, deployment, landscape, prd, adr-0008-doc-placement-by-scope]
 ---
@@ -46,6 +46,7 @@ Peak rps = daily count × 0.15 / 3600 × 2.
 | Case 2 — calls reaching Identity `GET /internal/users` | **~100 k** (Care cache hit ≈ 80 %, TTL 300 s) | **~9** (20–50 ids each) | one `id = ANY($1)` PK query per call |
 | JWKS fetches by Care | negligible | < 1 | cached 300 s; refetch on unknown `kid` at most once per minute |
 | Service-token exchanges | ~1 per 270 s per Care task | < 1 | one argon2id verify each |
+| Case 2 — Care's doctor name-index refresh (care ADR 0025) | ≈ 7.2 k calls/day (≈ 25 batched calls every 300 s through the same read-through cache) | < 1 | additional to the ~100 k/day row above (≈ +7 %); still `id = ANY($1)` PK lookups, inside Identity's budget; authored in Care's [capacity derivation](../../vcare-care-api/docs/architecture/capacity.md) §9 |
 | Cases 1 and 3 — status changes | < 100 | < 1 | doctor verification decisions and suspensions |
 
 At 10×: ~1 M hydration calls/day reach Identity (~90 rps) — still PK lookups, still inside Identity's
