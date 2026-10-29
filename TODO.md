@@ -13,6 +13,7 @@ Things intentionally **not** built yet. Captured here so they're a decision, not
 - [x] **Care capacity** — derived in care-service `docs/architecture/capacity.md`; hub row filled (2026-09-15).
 - [x] **Care availability / RPO / RTO** — care ADR 0005 (99.9 %); hub row filled; platform roll-up now 99.9 % (2026-09-15).
 - [x] **Care runtime detail** — care-service `docs/architecture/deployment.md`, care ADRs 0006–0008 (2026-09-15).
+- [ ] **Care `help:read` scope** — when the Phase-2 AI service is built, build care's `GET /internal/help-articles` (care ADR 0028) and provision `help:read` (and `doctors:read`) on the AI service client in Identity; provider first.
 - [ ] **Placement check in CI** — the `service: platform` ⇔ hub check runs today only in the spokes' Stop hook.
 
 ## Events / AsyncAPI (once a message bus exists)
