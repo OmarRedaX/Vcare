@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: stable
 diataxis: explanation
-last_verified: 2026-10-14
+last_verified: 2026-10-29
 tags: [architecture, landscape, dependencies, integration, service-auth, failure-policy]
 related: [prd, overview, deployment, capacity, service-catalog, data-ownership, glossary, adr-0001-two-service-split, adr-0003-service-token-s2s-auth, adr-0005-single-origin-edge-routing, adr-0006-doctor-account-status-via-care-only, adr-0009-doctor-reinstatement-via-care, adr-0010-notification-contact-lookup]
 ---
@@ -243,6 +243,7 @@ sequenceDiagram
 | identity-service | `PATCH /internal/users/:id/status` | `users:status:write` | care-service | account status change; `suspended`/`rejected` revoke all sessions (Cases 1, 3); `suspended → active` (Case 4); doctor targets only |
 | identity-service | `GET /internal/users/contacts?ids=` (consumer built 2026-10-12) | `users:contact:read` | care-service (`care-worker` only) | notification recipient email, name and locale (Case 5) |
 | care-service | `GET /internal/doctors/:userId/summary` | `doctors:read` | admin tooling, Phase-2 AI (no MVP client) | verification state and specialty |
+| care-service | `GET /internal/help-articles` (**designed, not built**; care ADR 0028) | `help:read` | Phase-2 AI service (no MVP client) | published help articles for both audiences, `updatedSince` for incremental indexing |
 
 Both services also expose `GET /internal/health` (no token). Scopes are issued only by Identity;
 `doctors:read` is defined by Care's contract and granted to service clients in Identity — **no MVP

@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: stable
 diataxis: explanation
-last_verified: 2026-10-21
+last_verified: 2026-10-29
 tags: [architecture, data-ownership, boundaries, privacy]
 related: [prd, landscape, glossary, adr-0001-two-service-split, adr-0006-doctor-account-status-via-care-only, adr-0011-object-storage-host]
 ---
@@ -48,7 +48,7 @@ split a real two-service architecture and not a distributed monolith. Entities c
 | Medical record amendments | care-service | record endpoints | append-only after the 24 h lock |
 | Record attachments | care-service | on-demand `download-url` (patient, consulting doctor; never admins) | stored by object key only after byte verification; presigned GET 60 s, audited; no delete after lock |
 | Upload intents | care-service | not exposed | temporary (15 min), single-use; never a document or attachment |
-| Help articles | care-service | `GET /api/help-articles` | Phase-2 RAG corpus (read by the AI service through Care's API) |
+| Help articles | care-service | `GET /api/help-articles` (users); a future `GET /internal/help-articles` for the AI service (service token, scope `help:read`; designed in care ADR 0028, built with Phase 2) | Phase-2 RAG corpus (read by the AI service through that internal endpoint); admin-authored Markdown, not clinical data |
 | Audit log | care-service | `GET /api/audit-logs` (admin, metadata only) | append-only, monthly partitions, retained ≥ 6 years; metadata never holds clinical text or PII |
 | Notification outbox | care-service | not exposed | ids and non-clinical render params only — no email, no clinical text; delivered by `care-worker` (care ADR 0011) |
 | Identity sync jobs (Cases 1, 3, 4) | care-service | not exposed | ids, target status, error class only |
