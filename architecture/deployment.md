@@ -4,7 +4,7 @@ owner: platform-team
 service: platform
 status: accepted
 diataxis: explanation
-last_verified: 2026-10-23
+last_verified: 2026-11-02
 tags: [architecture, deployment, topology, devops, networking, slo, disaster-recovery, release, observability]
 related: [overview, capacity, landscape, adr-0001-two-service-split, adr-0005-single-origin-edge-routing, adr-0007-managed-container-platform, adr-0008-doc-placement-by-scope]
 ---
@@ -64,6 +64,15 @@ Summary of [ADR 0005](../adr/0005-single-origin-edge-routing.md); the ADR table 
 Prefixes never overlap. A service adding a top-level public prefix changes the edge table (IaC) and ADR 0005 in the
 same release. CORS is disabled in production. WAF rate-based and bot rules protect `/api/auth/login`,
 `/api/auth/register/*`, and `/api/auth/forgot-password`.
+
+**Client IP behind the edge.** Per-IP rate limits need the real viewer address, which only a correct proxy hop count gives.
+In the reference implementation the public chain is CloudFront then the public ALB, so each public listener runs with two
+trusted proxies: CloudFront appends the viewer address, the ALB appends the CloudFront address, and the viewer is the second
+entry from the right of `X-Forwarded-For` (care-service: `TRUST_PROXY_HOPS=2`; entries further left are caller-controlled).
+The public ALB must accept traffic only from the CloudFront origin-facing prefix list, otherwise a caller reaching the ALB
+directly controls the value the hop count trusts. With `0` behind the edge every caller shares the ALB address and one
+per-IP bucket; with too high a value callers can spoof their address. Care logs `trust_proxy_hops_unset` at boot when
+`NODE_ENV=production` and the value is `0` (care issue #16).
 
 ## 3. Runtime components and network rules
 
