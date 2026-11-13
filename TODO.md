@@ -42,7 +42,7 @@ named by care-service), add `contracts/<service>.asyncapi.yaml` to the sync and 
 - [x] **care-service file handling — contract and code** (care ADRs 0013–0015 and 0022, hub ADR 0011): built for verification
   documents (2026-10-08) and record attachments (2026-10-20); contract synced (uploads + complete, download-url, DTOs without
   `downloadUrl`, `UploadIntentExpired`, `AttachmentLimitReached`).
-- [ ] **care-service file handling — bucket IaC and web CSP** (decided 2026-10-20, `/system-design`; derivation in care
+- [x] **care-service file handling — bucket IaC and web CSP** (bucket IaC built 2026-11-13 as AWS CDK in care `infra/`, [care ADR 0029](../vcare-care-api/docs/adr/0029-bucket-iac-with-aws-cdk.md), tested by synth assertions, not yet deployed; the web CSP bullet is moot, no web app is planned; decided 2026-10-20, `/system-design`; derivation in care
   `docs/architecture/file-handling.md`): the bucket module must name **both final prefixes**, `verification-documents/*` and
   `record-attachments/*`, wherever it names a prefix:
   - Block Public Access on, TLS-only bucket policy, SSE-S3 (unchanged for clinical attachments), CORS `POST` from the web origin only.
